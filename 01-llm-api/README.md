@@ -195,7 +195,7 @@ def add_message(self, role: str, content: str):
         "role": role,
         "content": content
     })
-
+    
     # ВАШЕ ЗАДАНИЕ: Реализуйте ограничение
     # Подсказка: оставляйте системный промпт + последние N сообщений
     # MAX_MESSAGES = 10

@@ -22,8 +22,8 @@ console = Console()
 # Системный промпт - определяет роль и поведение ассистента
 # ЗАДАНИЕ: Вставьте сюда ваш системный промпт, который определит поведение бота
 # Например: "Ты — профессиональный банковский консультант..."
-SYSTEM_PROMPT = ""
-
+#SYSTEM_PROMPT = " Ты опытный математик, решай задачи и объясняй ход решения. "
+SYSTEM_PROMPT = " Ты мудрый и знающий собеседник, который много путешествовал и имеющий много знаний о других странах и народах. Отвечай на вопросы и рекомендуй интересные путешествия. "
 
 class ChatBot:
     """Простой CLI бот для общения с LLM."""
@@ -44,7 +44,7 @@ class ChatBot:
             api_key=api_key,
             base_url=base_url,
         )
-
+        self.MAX_MESSAGES = 4
         self.conversation_history: List[Dict[str, str]] = []
 
         if SYSTEM_PROMPT:
@@ -66,7 +66,8 @@ class ChatBot:
             "role": role,
             "content": content
         })
-
+        if len(self.conversation_history) > self.MAX_MESSAGES:
+            del self.conversation_history[1] # удаляем второе сообщение
         # ЗАДАНИЕ 4: Реализуйте ограничение истории здесь
         # Подсказка: оставляйте системный промпт + последние N сообщений
         # MAX_MESSAGES = 10
