@@ -1,0 +1,4 @@
+# Byte-compiled / optimized / DLL files
+.venv_notebook_demo/
+.env
+data
