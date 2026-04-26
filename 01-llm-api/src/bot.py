@@ -44,7 +44,7 @@ class ChatBot:
             api_key=api_key,
             base_url=base_url,
         )
-        self.MAX_MESSAGES = 4
+        self.MAX_MESSAGES = 5
         self.conversation_history: List[Dict[str, str]] = []
 
         if SYSTEM_PROMPT:
@@ -66,7 +66,7 @@ class ChatBot:
             "role": role,
             "content": content
         })
-        if len(self.conversation_history) > self.MAX_MESSAGES:
+        if len(self.conversation_history) > self.MAX_MESSAGES + 1:
             del self.conversation_history[1] # удаляем второе сообщение
         # ЗАДАНИЕ 4: Реализуйте ограничение истории здесь
         # Подсказка: оставляйте системный промпт + последние N сообщений
