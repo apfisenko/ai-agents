@@ -38,9 +38,13 @@ class AppConfig:
                 f"(set an existing file; see .env.example)"
             )
         try:
-            system_prompt_text = sp.read_text(encoding="utf-8")
+            raw = sp.read_text(encoding="utf-8")
         except OSError as e:
             raise ValueError(f"Cannot read SYSTEM_PROMPT_PATH file: {sp}") from e
+        # UTF-8 BOM в начале файла с Windows-редактора мешает первой строке
+        if raw.startswith("\ufeff"):
+            raw = raw[1:]
+        system_prompt_text = raw.strip()
         log_level = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
         return AppConfig(
             telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"].strip(),

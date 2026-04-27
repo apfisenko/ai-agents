@@ -1,12 +1,7 @@
 .git
-.env
 .venv
 __pycache__
-*.py[cod]
-*$py.class
+*.pyc
+.env
 .pytest_cache
-.mypy_cache
-.ruff_cache
 .cursor
-*.md
-!ReadMe.md

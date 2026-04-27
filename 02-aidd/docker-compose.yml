@@ -1,5 +1,16 @@
 services:
-  app:
+  bot:
     build: .
-    env_file: .env
+    env_file:
+      - .env
+    environment:
+      AIDD_DOCKER: "1"
+      # Docker читает .env: HTTPS_PROXY -> прокси на Windows. Если к Telegram в контейнере нужен тот же прокси, не включайте
+      # строку ниже. Раскомментируйте только если в контейнере интернет/ Telegram без прокси, а .env с прокси — для `uv run`.
+      # AIDD_DOCKER_DIRECT_NETWORK: "1"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

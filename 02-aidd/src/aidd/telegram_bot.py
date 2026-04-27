@@ -1,4 +1,5 @@
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 
@@ -12,6 +13,17 @@ from aidd.telegram_session import TrustEnvAiohttpSession
 logger = logging.getLogger(__name__)
 
 
+def _telegram_http_timeout() -> float:
+    """Таймаут HTTP к Telegram (сек.); по умолчанию 60, как в aiogram. См. TELEGRAM_HTTP_TIMEOUT."""
+    raw = (os.environ.get("TELEGRAM_HTTP_TIMEOUT") or "").strip()
+    if not raw:
+        return 60.0
+    try:
+        return max(10.0, min(float(raw), 600.0))
+    except ValueError:
+        return 60.0
+
+
 class TelegramBot:
     def __init__(self, config: AppConfig) -> None:
         self._conversation_store = ConversationStore()
@@ -22,7 +34,7 @@ class TelegramBot:
         )
         self._bot = Bot(
             token=config.telegram_bot_token,
-            session=TrustEnvAiohttpSession(),
+            session=TrustEnvAiohttpSession(timeout=_telegram_http_timeout()),
         )
         self._dp = Dispatcher()
         self._dp.update.middleware(
