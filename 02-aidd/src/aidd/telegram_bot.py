@@ -31,6 +31,7 @@ class TelegramBot:
             api_key=config.openrouter_api_key,
             base_url=config.openrouter_base_url,
             model=config.llm_model,
+            max_completion_tokens=config.llm_max_completion_tokens,
         )
         self._bot = Bot(
             token=config.telegram_bot_token,

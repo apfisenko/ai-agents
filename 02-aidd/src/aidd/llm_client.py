@@ -12,8 +12,15 @@ class LlmInvocationError(Exception):
 
 
 class LlmClient:
-    def __init__(self, api_key: str, base_url: str, model: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model: str,
+        max_completion_tokens: int,
+    ) -> None:
         self._model = model
+        self._max_completion_tokens = max_completion_tokens
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     async def complete(
@@ -28,6 +35,7 @@ class LlmClient:
                     {"role": "system", "content": system_prompt},
                     *messages,
                 ],
+                max_tokens=self._max_completion_tokens,
             )
         except Exception as e:
             logger.warning("LLM request failed: %s", type(e).__name__)

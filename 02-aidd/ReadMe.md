@@ -15,7 +15,7 @@ MVP-бот на Python 3.11: Telegram (long polling), ответы через **
 ## Зависимости и запуск
 
 - [uv](https://docs.astral.sh/uv/), Python **3.11** (см. `pyproject.toml`).
-- Скопировать `.env.example` в `.env` и задать переменные (токен бота, ключ OpenRouter, модель, `OPENROUTER_BASE_URL`, путь к файлу системного промпта и т.д.).
+- Скопировать `.env.example` в `.env` и задать переменные (токен бота, ключ OpenRouter, модель, `OPENROUTER_BASE_URL`, лимит ответа в токенах `LLM_MAX_COMPLETION_TOKENS`, путь к файлу системного промпта и т.д.).
 - **Напрямую:** `uv sync` и `uv run python -m aidd` (из корня каталога проекта `02-aidd`, где лежит `pyproject.toml`).
 - **macOS и Linux** — GNU Make в корне проекта:
   - `make install` — `uv sync`
@@ -28,7 +28,7 @@ MVP-бот на Python 3.11: Telegram (long polling), ответы через **
 
 **Windows (PowerShell)** — цели Docker в `make.ps1` выполняют **`docker compose` через WSL**, с рабочим каталогом **корня репозитория** на диске Windows (`wsl --cd <корень> -e docker compose ...`). Отдельно ставить Docker в PATH Windows не требуется.
 
-1. В корне проекта подготовьте `.env` (как для `uv run`). `SYSTEM_PROMPT_PATH=prompts/system.txt` в контейнере совпадает с образом.
+1. В корне проекта подготовьте `.env` (как для `uv run`), в том числе **`LLM_MAX_COMPLETION_TOKENS`** (см. `.env.example`). `SYSTEM_PROMPT_PATH=prompts/system.txt` в контейнере совпадает с образом.
 2. **Прокси (и на хосте, и в Docker):** `HTTPS_PROXY` / `HTTP_PROXY` в `.env` — **один и тот же** сценарий: без прокси Telegram (и OpenRouter) часто недоступны. Из контейнера запрос к `127.0.0.1:ПОРТ` **автоматически идёт на прокси на Windows** (не на localhost внутри контейнера). Типичная ошибка: прокси на Windows слушает только `127.0.0.1` — с Docker bridge до него **нет** пути, пока не включите **Allow LAN** в VPN и/или **netsh portproxy** (см. раздел **Docker в WSL** ниже; подсказка команд: `.\make.ps1 docker-portproxy-hint`). Исключение: `AIDD_DOCKER_DIRECT_NETWORK` в `docker-compose` — только если у вас **в контейнере** к Telegram **уже** есть выход **без** прокси (например, другое сетевое окружение); тогда в `.env` прокси может оставаться для `uv run` на хосте.
 3. Из PowerShell в этом каталоге:
    - `.\make.ps1 docker-build` — сборка образа
@@ -49,7 +49,9 @@ MVP-бот на Python 3.11: Telegram (long polling), ответы через **
 
 ## Переменные окружения
 
-Список обязательных имён и смыслов — в `.env.example`. Секреты в репозиторий не класть, только пример.
+Список обязательных имён и пример значений — в `.env.example` (скопировать в `.env`; секреты в репозиторий не класть, только пример).
+
+**Обязательные параметры включают:** `TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `LLM_MODEL`, `OPENROUTER_BASE_URL`, **`LLM_MAX_COMPLETION_TOKENS`** — целое **64–8192**, задаёт **`max_tokens`** для ответа модели (типично **1024**); `SYSTEM_PROMPT_PATH` и др. По желанию: `LOG_LEVEL`, `TELEGRAM_HTTP_TIMEOUT`, прокси (`HTTPS_PROXY` / `HTTP_PROXY`).
 
 ### Прокси и VPN
 

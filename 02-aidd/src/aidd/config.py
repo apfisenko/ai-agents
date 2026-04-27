@@ -11,7 +11,24 @@ REQUIRED: Final[Tuple[str, ...]] = (
     "LLM_MODEL",
     "OPENROUTER_BASE_URL",
     "SYSTEM_PROMPT_PATH",
+    "LLM_MAX_COMPLETION_TOKENS",
 )
+
+
+def _parse_llm_max_completion_tokens(raw: str) -> int:
+    s = raw.strip()
+    try:
+        v = int(s)
+    except ValueError:
+        raise ValueError(
+            f"LLM_MAX_COMPLETION_TOKENS must be an integer between 64 and 8192, got: {raw!r}"
+        ) from None
+    if v < 64 or v > 8192:
+        raise ValueError(
+            "LLM_MAX_COMPLETION_TOKENS must be an integer between 64 and 8192 "
+            f"(got {v})"
+        )
+    return v
 
 
 @dataclass(frozen=True)
@@ -23,6 +40,7 @@ class AppConfig:
     system_prompt_path: Path
     system_prompt_text: str
     log_level: str
+    llm_max_completion_tokens: int
 
     @staticmethod
     def from_env() -> "AppConfig":
@@ -46,6 +64,9 @@ class AppConfig:
             raw = raw[1:]
         system_prompt_text = raw.strip()
         log_level = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
+        llm_max = _parse_llm_max_completion_tokens(
+            os.environ["LLM_MAX_COMPLETION_TOKENS"]
+        )
         return AppConfig(
             telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"].strip(),
             openrouter_api_key=os.environ["OPENROUTER_API_KEY"].strip(),
@@ -54,4 +75,5 @@ class AppConfig:
             system_prompt_path=sp.resolve(),
             system_prompt_text=system_prompt_text,
             log_level=log_level,
+            llm_max_completion_tokens=llm_max,
         )
