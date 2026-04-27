@@ -21,6 +21,7 @@ class AppConfig:
     llm_model: str
     openrouter_base_url: str
     system_prompt_path: Path
+    system_prompt_text: str
     log_level: str
 
     @staticmethod
@@ -36,6 +37,10 @@ class AppConfig:
                 f"SYSTEM_PROMPT_PATH is not a path to a readable file: {sp} "
                 f"(set an existing file; see .env.example)"
             )
+        try:
+            system_prompt_text = sp.read_text(encoding="utf-8")
+        except OSError as e:
+            raise ValueError(f"Cannot read SYSTEM_PROMPT_PATH file: {sp}") from e
         log_level = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
         return AppConfig(
             telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"].strip(),
@@ -43,5 +48,6 @@ class AppConfig:
             llm_model=os.environ["LLM_MODEL"].strip(),
             openrouter_base_url=os.environ["OPENROUTER_BASE_URL"].strip().rstrip("/"),
             system_prompt_path=sp.resolve(),
+            system_prompt_text=system_prompt_text,
             log_level=log_level,
         )
