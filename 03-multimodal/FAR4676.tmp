@@ -1,0 +1,37 @@
+# Скопируйте в .env и задайте значения. Не коммитьте .env.
+
+TELEGRAM_BOT_TOKEN=8634533420:AAEcea2zrvemCy_H6uYBkmx0O_pHxhfI7yk
+OPENROUTER_API_KEY=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
+#LLM_MODEL=openai/gpt-4o-mini
+LLM_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+#openai/gpt-oss-120b:free
+LLM_VISION_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+#bytedance-seed/seedream-4.5
+#bytedance-seed/seedream-4.5
+#sourceful/riverflow-v2-standard-preview
+#LLM_VISION_MODEL=openai/gpt-4o-mini
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+# Путь к файлу с системным промптом (от корня репозитория или абсолютный)
+SYSTEM_PROMPT_PATH=prompts/system.txt
+# По умолчанию в коде: INFO
+LOG_LEVEL=INFO
+# --- Прокси / VPN (если без этого бот не доходит до api.telegram.org / OpenRouter) ---
+# Укажите URL с схемой или только хост:порт (будет добавлено http://):
+#   HTTPS_PROXY=http://127.0.0.1:11301   (часто с netsh 11301->реальный_порт; см. ReadMe)
+#   HTTPS_PROXY=http://127.0.0.1:1301
+# Один .env: и `uv run`, и Docker. В Docker тот же HTTPS_PROXY указывает на прокси на Windows; при ClientProxyConnectionError
+# — ReadMe (Allow LAN, netsh portproxy). AIDD_DOCKER_DIRECT_NETWORK в docker-compose — только если в контейнере к Telegram
+# путь без прокси, а в .env прокси оставлен ради `uv run` на хосте.
+# AIDD_WINDOWS_PROXY_HOST: при Docker+wsl + ошибке 172.17.0.1 — IP Windows из: PowerShell: .\make.ps1 docker-windows-host-ip
+# AIDD_DOCKER_DIRECT_NETWORK=1: только в docker-compose, если в контейнере без прокси, а .env с прокси — для `uv run`
+HTTPS_PROXY=http://127.0.0.1:11301
+HTTP_PROXY=
+AIDD_DOCKER_DIRECT_NETWORK=
+AIDD_WINDOWS_PROXY_HOST=
+
+# Docker через WSL: куда слать трафик к прокси на Windows (должно совпадать с выводом .\\make.ps1 docker-windows-host-ip)
+AIDD_WINDOWS_PROXY_HOST=172.24.0.1
+LLM_MAX_COMPLETION_TOKENS=1024
+DEFAULT_CURRENCY=RUB
+# Таймаут HTTP к Telegram (сек.), по умолчанию 60. Не устраняет блокировку/отсутствие маршрута из Docker.
+# TELEGRAM_HTTP_TIMEOUT=90
