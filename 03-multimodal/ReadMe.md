@@ -1,6 +1,6 @@
 # Проект бота с LLM (AIDD)
 
-MVP-бот на Python 3.11: Telegram (long polling), ответы через **OpenRouter** (OpenAI-совместимый API) с системным промптом из файла. Подробности целей и границ — в `docs/vision.md`, план итераций — в `docs/tasklist.md`.
+MVP-бот на Python 3.11: Telegram (long polling), ответы через **OpenRouter** или **локальный Ollama** (оба через OpenAI-совместимый API, `base_url` из env) с системным промптом из файла. Подробности целей и границ — в `docs/vision.md`, план итераций — в `docs/tasklist.md`.
 
 ## Текущее состояние MVP
 
@@ -9,14 +9,15 @@ MVP-бот на Python 3.11: Telegram (long polling), ответы через **
 | Каркас, конфигурация, запуск в Telegram | готово |
 | Диалог с моделью и история в памяти процесса | готово |
 | Docker и compose | готово |
+| Учёт текста/VLM, OpenRouter/Ollama в `.env`, голосовые (audio в LLM) | готово |
 
-**Уже есть:** текстовое сообщение → запрос к модели (`system` из файла по `SYSTEM_PROMPT_PATH` + история по `chat_id`) → ответ в чат; контекст сохраняется между репликами до перезапуска процесса; команда `/start` сбрасывает историю этого чата и показывает приветствие; `/check_telegram` — проверка связи с Telegram API; нетекстовые сообщения обрабатываются единообразно (короткая подсказка); при ошибке LLM пользователь видит короткое нейтральное сообщение без технических деталей; опционально прокси для клиента Telegram через `HTTPS_PROXY` / `HTTP_PROXY` (см. ниже); тот же `.env` и сценарии работают при запуске через Docker Compose (см. раздел Docker).
+**Уже есть:** текстовое сообщение и **голосовое** (аудио в LLM через `input_audio`, см. `.env.example` и модель с поддержкой audio) → тот же учёт транзакций по истории из `SYSTEM_PROMPT_PATH`; фото чека → VLM; контекст по `chat_id` до перезапуска; `/start` сбрасывает историю; `/check_telegram` — связь с Telegram; прочие нетиповые сообщения — короткая подсказка; при ошибке LLM — нейтральный ответ; прокси `HTTPS_PROXY` / `HTTP_PROXY` (см. ниже); тот же `.env` для `uv run` и Docker Compose.
 
 ## Зависимости и запуск
 
 - [uv](https://docs.astral.sh/uv/), Python **3.11** (см. `pyproject.toml`).
-- Скопировать `.env.example` в `.env` и задать переменные (токен бота, ключ OpenRouter, модель, `OPENROUTER_BASE_URL`, лимит ответа в токенах `LLM_MAX_COMPLETION_TOKENS`, путь к файлу системного промпта и т.д.).
-- **Напрямую:** `uv sync` и `uv run python -m aidd` (из корня каталога проекта `02-aidd`, где лежит `pyproject.toml`).
+- Скопировать `.env.example` в `.env` и задать переменные (токен бота, **`OPENROUTER_API_KEY`** / URL / модели — OpenRouter или Ollama, см. раздел ниже), `LLM_MAX_COMPLETION_TOKENS`, путь к файлу системного промпта и т.д.).
+- **Напрямую:** `uv sync` и `uv run python -m aidd` из **корня репозитория** (каталог с `pyproject.toml`).
 - **macOS и Linux** — GNU Make в корне проекта:
   - `make install` — `uv sync`
   - `make run` — `uv run python -m aidd`
@@ -52,6 +53,22 @@ MVP-бот на Python 3.11: Telegram (long polling), ответы через **
 Список обязательных имён и пример значений — в `.env.example` (скопировать в `.env`; секреты в репозиторий не класть, только пример).
 
 **Обязательные параметры включают:** `TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `LLM_MODEL`, `OPENROUTER_BASE_URL`, **`LLM_MAX_COMPLETION_TOKENS`** — целое **64–8192**, задаёт **`max_tokens`** для ответа модели (типично **1024**); `SYSTEM_PROMPT_PATH` и др. По желанию: `LOG_LEVEL`, `TELEGRAM_HTTP_TIMEOUT`, прокси (`HTTPS_PROXY` / `HTTP_PROXY`).
+
+### OpenRouter и Ollama: как переключать
+
+Один и тот же бинарник; провайдер задаётся **только переменными окружения** (в т.ч. через `docker compose` и `env_file: .env`).
+
+1. **Имена из кода** (другие префиксы приложение **не подхватывает**): `OPENROUTER_BASE_URL`, `OPENROUTER_API_KEY`, `LLM_MODEL`, для фото чеков — **`LLM_VISION_MODEL`**, для **голосовых** при отличии от текста — **`LLM_AUDIO_MODEL`** (если пусты, берётся `LLM_MODEL`). Лимиты: при необходимости **`LLM_VISION_MAX_COMPLETION_TOKENS`**, **`LLM_AUDIO_MAX_COMPLETION_TOKENS`**. Не используйте `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `MODEL_TEXT` / `MODEL_IMAGE`.
+2. **Профиль OpenRouter:** как в комментариях `.env.example`: `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`, `OPENROUTER_API_KEY=<ключ>`, `LLM_MODEL` и при необходимости `LLM_VISION_MODEL` в формате OpenRouter (например `openai/gpt-4o-mini`).
+3. **Профиль Ollama** (сервер с `ollama serve`, API на порту **11434**):  
+   `OPENROUTER_BASE_URL=http://<IP_или_хост>:11434/v1`  
+   `OPENROUTER_API_KEY=ollama` (или другая **непустая** заглушка — переменная обязательна при старте)  
+   `LLM_MODEL` и `LLM_VISION_MODEL` — имена моделей как в Ollama (пример: `qwen2.5:7b-instruct`, `qwen3-vl:8b-instruct`). Для голосовых — при необходимости отдельная **`LLM_AUDIO_MODEL`** (модель с поддержкой аудио в chat); если поддерживается той же мультимоделью что и текст — переменную можно не задавать.
+   С Docker: с контейнера должен быть достижим хост с Ollama (не `127.0.0.1` **внутри** контейнера, если Ollama на другой машине — используйте реальный IP/LAN; при Ollama на том же ПК что и Docker — см. сеть WSL/маршрутизацию).
+4. **Переключение туда-обратно:** отредактировать `.env` (URL + ключ + имена моделей), **перезапустить** процесс (`uv run` / контейнер). В логах при старте строка вида `LLM: текст=…; голос=…; фото чеков=…` — должна совпасть с выбранными моделями.
+5. **Проверка (чеклист):** после смены профиля — старт без ошибки конфига; сырой запрос к API (например `curl` на `<OPENROUTER_BASE_URL>/models` при типичном `…/v1` в base); в Telegram — текст, при необходимости **голосовое** (модель с audio input задана через `LLM_AUDIO_MODEL` или та же мультимодель в `LLM_MODEL`) и фото чека.
+
+Подробные закомментированные примеры — в `.env.example`.
 
 ### Прокси и VPN
 

@@ -53,12 +53,14 @@ class AppConfig:
     telegram_bot_token: str
     openrouter_api_key: str
     llm_model: str
+    llm_audio_model: str
     llm_vision_model: str
     openrouter_base_url: str
     system_prompt_path: Path
     system_prompt_text: str
     log_level: str
     llm_max_completion_tokens: int
+    llm_audio_max_completion_tokens: int
     llm_vision_max_completion_tokens: int
     llm_http_timeout_seconds: float | None
     default_currency: str
@@ -94,8 +96,15 @@ class AppConfig:
         )
         raw_currency = (os.environ.get("DEFAULT_CURRENCY") or "RUB").strip()
         default_currency = raw_currency.upper() if raw_currency else "RUB"
+        raw_am = (os.environ.get("LLM_AUDIO_MODEL") or "").strip()
+        llm_audio_model = raw_am or os.environ["LLM_MODEL"].strip()
         raw_vm = (os.environ.get("LLM_VISION_MODEL") or "").strip()
         llm_vision_model = raw_vm or os.environ["LLM_MODEL"].strip()
+        raw_am_tok = (os.environ.get("LLM_AUDIO_MAX_COMPLETION_TOKENS") or "").strip()
+        if raw_am_tok:
+            llm_audio_max = _parse_llm_max_completion_tokens(raw_am_tok)
+        else:
+            llm_audio_max = min(8192, max(llm_max, 2048))
         raw_vm_tok = (os.environ.get("LLM_VISION_MAX_COMPLETION_TOKENS") or "").strip()
         if raw_vm_tok:
             llm_vision_max = _parse_llm_max_completion_tokens(raw_vm_tok)
@@ -106,12 +115,14 @@ class AppConfig:
             telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"].strip(),
             openrouter_api_key=os.environ["OPENROUTER_API_KEY"].strip(),
             llm_model=os.environ["LLM_MODEL"].strip(),
+            llm_audio_model=llm_audio_model,
             llm_vision_model=llm_vision_model,
             openrouter_base_url=os.environ["OPENROUTER_BASE_URL"].strip().rstrip("/"),
             system_prompt_path=sp.resolve(),
             system_prompt_text=system_prompt_text,
             log_level=log_level,
             llm_max_completion_tokens=llm_max,
+            llm_audio_max_completion_tokens=llm_audio_max,
             llm_vision_max_completion_tokens=llm_vision_max,
             llm_http_timeout_seconds=llm_http_timeout,
             default_currency=default_currency,

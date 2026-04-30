@@ -36,6 +36,8 @@ class TelegramBot:
             max_completion_tokens=config.llm_max_completion_tokens,
             vision_model=config.llm_vision_model,
             vision_max_completion_tokens=config.llm_vision_max_completion_tokens,
+            audio_model=config.llm_audio_model,
+            audio_max_completion_tokens=config.llm_audio_max_completion_tokens,
             http_timeout_seconds=config.llm_http_timeout_seconds,
         )
         self._bot = Bot(

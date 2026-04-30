@@ -92,8 +92,9 @@ def main() -> None:
         len(config.system_prompt_text),
     )
     logger.info(
-        "LLM: текст=%s; фото чеков=%s",
+        "LLM: текст=%s; голос=%s; фото чеков=%s",
         config.llm_model,
+        config.llm_audio_model,
         config.llm_vision_model,
     )
     if is_docker_container() and (

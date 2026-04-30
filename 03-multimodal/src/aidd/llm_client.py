@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 import httpx
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI
 from pydantic import ValidationError
 
 from aidd.transaction_schema import TransactionExtractionResponse
@@ -65,9 +65,20 @@ _RECEIPT_IMAGE_INSTRUCTION = (
     "На изображении чек или фискальный документ (или их скан). Извлеки все финансовые операции "
     "строго по правилам системного промпта и верни structured-ответ той же схемой."
 )
+_VOICE_AUDIO_INSTRUCTION = (
+    "В аудио — речь пользователя о личных финансах, тратах или доходах. Извлеки финансовые операции "
+    "строго по правилам системного промпта и верни structured-ответ той же схемой. "
+    "Поле amount для новой записи — только из этого аудио (сказанное число); не восстанавливай суммы из прошлой переписки. "
+    "Категория и ответ пользователю — строго по услышанным словам (если сказано «продукты», не ставь «транспорт»)."
+)
 _JSON_TAIL_PARSE = (
     "\n\nОтветь одним JSON-объектом с полями transactions (массив объектов операций) и reply_to_user "
     "(строка). Без markdown, без текста до или после JSON."
+)
+_VOICE_JSON_EXTRA = (
+    "\n\nПо русскому аудио: суммы часто названы числительными — заполни amount числом (триста → 300). "
+    "Если есть и тема («продукты») и сумма словами — создай хотя бы одну запись в transactions. "
+    "Поле reply_to_user не оставляй пустым: либо кратко подтверди сумму и тему, либо попроси повторить сумму цифрами."
 )
 _TEXT_JSON_FALLBACK_HINT = (
     "\n\nОтветь одним JSON-объектом с полями transactions и reply_to_user по системному промпту. "
@@ -77,6 +88,10 @@ _TEXT_JSON_FALLBACK_HINT = (
 
 class LlmInvocationError(Exception):
     """Сбой вызова LLM; пользовательское сообщение формирует handler."""
+
+
+class LlmAudioPaymentRequiredError(LlmInvocationError):
+    """Провайдер отклонил аудиозапрос из‑за баланса/оплаты (часто OpenRouter HTTP 402)."""
 
 
 def _strip_think_and_noise(text: str) -> str:
@@ -89,6 +104,12 @@ def _strip_think_and_noise(text: str) -> str:
         flags=re.IGNORECASE,
     )
     return t.strip()
+
+
+def _is_payment_required(exc: BaseException) -> bool:
+    """402 от OpenRouter и др.: для modality audio иногда нужен минимальный баланс."""
+    sc = getattr(exc, "status_code", None)
+    return isinstance(exc, APIStatusError) and sc == 402
 
 
 def _assistant_content_to_transaction_json(raw: str) -> TransactionExtractionResponse:
@@ -152,6 +173,24 @@ async def _extract_transactions_json_fallback(
     return _assistant_content_to_transaction_json(raw)
 
 
+def _audio_input_format(mime_type: str) -> str:
+    """Формат поля input_audio.format (OpenRouter и др.); Telegram voice — обычно audio/ogg (opus)."""
+    m = (mime_type or "").split(";")[0].strip().lower()
+    if m in ("audio/mpeg", "audio/mp3"):
+        return "mp3"
+    if m in ("audio/wav", "audio/x-wav", "audio/wave"):
+        return "wav"
+    if m in ("audio/ogg", "application/ogg"):
+        return "ogg"
+    if m == "audio/flac":
+        return "flac"
+    if m in ("audio/aac", "audio/x-aac"):
+        return "aac"
+    if m in ("audio/mp4", "audio/x-m4a"):
+        return "m4a"
+    return "ogg"
+
+
 class LlmClient:
     def __init__(
         self,
@@ -161,12 +200,16 @@ class LlmClient:
         max_completion_tokens: int,
         vision_model: str,
         vision_max_completion_tokens: int,
+        audio_model: str,
+        audio_max_completion_tokens: int,
         http_timeout_seconds: float | None = None,
     ) -> None:
         self._model = model
         self._vision_model = vision_model
+        self._audio_model = audio_model
         self._max_completion_tokens = max_completion_tokens
         self._vision_max_completion_tokens = vision_max_completion_tokens
+        self._audio_max_completion_tokens = audio_max_completion_tokens
         client_kw: dict[str, Any] = {"api_key": api_key, "base_url": base_url}
         if http_timeout_seconds is not None:
             to = float(http_timeout_seconds)
@@ -335,6 +378,107 @@ class LlmClient:
                 logger.warning(
                     "VLM fallback request failed: model=%s %s%s detail=%s",
                     self._vision_model,
+                    type(e2).__name__,
+                    _http_err_suffix(e2),
+                    _exc_log_fragment(e2),
+                )
+                raise LlmInvocationError from None
+
+    async def extract_transactions_from_audio(
+        self,
+        system_prompt: str,
+        history: list[dict[str, str]],
+        audio_bytes: bytes,
+        mime_type: str,
+        caption_or_hint: str = "",
+    ) -> TransactionExtractionResponse:
+        """Голосовое сообщение: аудио в chat completions (input_audio) + JSON по схеме транзакций.
+        Мультимодальный parse для audio часто недоступен — как у VLM: create + JSON."""
+        instruction = _VOICE_AUDIO_INSTRUCTION + _VOICE_JSON_EXTRA + _JSON_TAIL_PARSE
+        cap = (caption_or_hint or "").strip()
+        if cap:
+            instruction = f"{instruction}\nКомментарий пользователя к сообщению: {cap}"
+
+        fmt = _audio_input_format(mime_type)
+        b64 = base64.standard_b64encode(audio_bytes).decode("ascii")
+        user_content: list[dict[str, Any]] = [
+            {"type": "text", "text": instruction},
+            {
+                "type": "input_audio",
+                "input_audio": {"data": b64, "format": fmt},
+            },
+        ]
+        history_msgs: list[dict[str, Any]] = []
+        for m in history:
+            role = (m.get("role") or "user").strip()
+            content = m.get("content") or ""
+            if role not in ("user", "assistant"):
+                continue
+            history_msgs.append({"role": role, "content": content})
+
+        msgs: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            *history_msgs,
+            {"role": "user", "content": user_content},
+        ]
+
+        async def _call(with_json_object_mode: bool) -> TransactionExtractionResponse:
+            logger.info(
+                "LLM request: voice audio, model=%s, json_object=%s, max_completion_tokens=%s, audio_format=%s",
+                self._audio_model,
+                with_json_object_mode,
+                self._audio_max_completion_tokens,
+                fmt,
+            )
+            kw: dict[str, Any] = {
+                "model": self._audio_model,
+                "messages": msgs,
+                "max_completion_tokens": self._audio_max_completion_tokens,
+            }
+            if with_json_object_mode:
+                kw["response_format"] = {"type": "json_object"}
+            response = await self._client.chat.completions.create(**kw)
+            msg = response.choices[0].message
+            content = _assistant_message_combined_text(msg).strip()
+            if not content:
+                fr = getattr(response.choices[0], "finish_reason", None)
+                logger.warning(
+                    "Voice/audio empty assistant text: model=%s finish_reason=%s max_completion_tokens=%s",
+                    self._audio_model,
+                    fr,
+                    self._audio_max_completion_tokens,
+                )
+                raise ValueError("empty assistant content after audio response")
+            return _assistant_content_to_transaction_json(content)
+
+        try:
+            return await _call(with_json_object_mode=True)
+        except Exception as e1:
+            if _is_payment_required(e1):
+                logger.warning(
+                    "Audio blocked by provider (payment/balance required): model=%s",
+                    self._audio_model,
+                )
+                raise LlmAudioPaymentRequiredError from None
+            logger.warning(
+                "Audio json_object request failed: model=%s %s%s detail=%s",
+                self._audio_model,
+                type(e1).__name__,
+                _http_err_suffix(e1),
+                _exc_log_fragment(e1),
+            )
+            try:
+                return await _call(with_json_object_mode=False)
+            except Exception as e2:
+                if _is_payment_required(e2):
+                    logger.warning(
+                        "Audio blocked by provider (payment/balance required): model=%s",
+                        self._audio_model,
+                    )
+                    raise LlmAudioPaymentRequiredError from None
+                logger.warning(
+                    "Audio fallback request failed: model=%s %s%s detail=%s",
+                    self._audio_model,
                     type(e2).__name__,
                     _http_err_suffix(e2),
                     _exc_log_fragment(e2),

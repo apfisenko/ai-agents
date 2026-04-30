@@ -1,6 +1,6 @@
 from aiogram import Router
 
-from . import balance, check_telegram, non_text, plain_text, receipt_photo, start
+from . import balance, check_telegram, non_text, plain_text, receipt_photo, start, voice_message
 
 
 def get_main_router() -> Router:
@@ -9,6 +9,7 @@ def get_main_router() -> Router:
     r.include_router(check_telegram.router)
     r.include_router(balance.router)
     r.include_router(receipt_photo.router)
+    r.include_router(voice_message.router)
     r.include_router(non_text.router)
     r.include_router(plain_text.router)
     return r
