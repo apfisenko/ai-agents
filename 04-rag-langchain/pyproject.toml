@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aidd"
+version = "0.1.0"
+description = "Telegram-бот с LLM (MVP)"
+readme = "ReadMe.md"
+requires-python = "==3.11.*"
+dependencies = [
+  "aiogram>=3.4,<4",
+  "openai>=1.40,<2",
+  "python-dotenv>=1.0.0",
+  "langchain-core>=0.3,<0.4",
+  "langchain-openai>=0.2,<0.4",
+  "langchain-community>=0.3,<0.4",
+  "langchain-text-splitters>=0.3,<0.4",
+  "pypdf>=4.0,<6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aidd"]
