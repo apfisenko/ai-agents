@@ -32,6 +32,28 @@ from aidd.rag_chain import RagChainRunner
 
 logger = logging.getLogger(__name__)
 
+
+def _run_coro_sync(coro):
+    """Выполнить корутину в новом цикле (обход asyncio.run после nest_asyncio и прочих патчей)."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        try:
+            pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+        except Exception:
+            pass
+        loop.close()
+        asyncio.set_event_loop(None)
+
+
 METRIC_NAMES: Final[tuple[str, ...]] = (
     "faithfulness",
     "answer_relevancy",
@@ -91,6 +113,23 @@ def _dataset_name() -> str:
     )
 
 
+def _parse_ragas_show_progress() -> bool:
+    """Полоса RAGAS в IDE/логах часто не обновляется; tqdm только по явному env."""
+    raw = (os.environ.get("RAGAS_SHOW_PROGRESS") or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _parse_ragas_max_workers() -> int:
+    raw = (os.environ.get("RAGAS_MAX_WORKERS") or "").strip()
+    if not raw:
+        return 1
+    try:
+        v = int(raw)
+    except ValueError:
+        return 1
+    return max(1, min(v, 16))
+
+
 def _examples_for_eval(client: Client, dataset_name: str, limit: int | None) -> Iterator[Any]:
     for i, ex in enumerate(client.list_examples(dataset_name=dataset_name)):
         if limit is not None and i >= limit:
@@ -99,8 +138,8 @@ def _examples_for_eval(client: Client, dataset_name: str, limit: int | None) -> 
 
 
 def _make_rag_target(rag_runner: RagChainRunner):
-    def target(inputs: dict[str, Any]) -> dict[str, Any]:
-        q = (inputs.get("question") or "").strip()
+    def target(inputs: dict[str, Any], **_: Any) -> dict[str, Any]:
+        q = str(inputs.get("question") or "").strip()
         if not q:
             return {"answer": "", "documents": []}
 
@@ -116,7 +155,7 @@ def _make_rag_target(rag_runner: RagChainRunner):
                 )
             return {"answer": res.text, "documents": docs}
 
-        return asyncio.run(_arun())
+        return _run_coro_sync(_arun())
 
     return target
 
@@ -161,7 +200,7 @@ def _build_ragas_metrics(
 
 
 def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> EvaluationRunSummary:
-    """Синхронный прогон: worker-thread (внутри можно asyncio.run для RAG)."""
+    """Синхронный прогон: worker-thread (RAG через отдельный event loop — см. `_run_coro_sync`)."""
     ls_key = _langsmith_api_key()
     if not ls_key:
         raise EvaluationError(
@@ -191,8 +230,9 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
     ragas_llm = LangchainLLMWrapper(lc_llm)
     ragas_embeddings = LangchainEmbeddingsWrapper(lc_embeddings)
     metrics = _build_ragas_metrics(ragas_llm, ragas_embeddings)
+    ragas_max_workers = _parse_ragas_max_workers()
     run_config = RunConfig(
-        max_workers=1,
+        max_workers=ragas_max_workers,
         timeout=420,
         max_retries=12,
         max_wait=120,
@@ -274,12 +314,27 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
         }
     )
 
+    n_metrics = len(metrics)
+    n_tasks = len(rows) * n_metrics
+    show_pb = _parse_ragas_show_progress()
+    logger.info(
+        "RAGAS: %s примеров × %s метрик = %s асинх-задач (max_workers=%s, tqdm=%s). "
+        "С progress bar счётчик обновляется только после целой задачи — долго на 0%% норма; "
+        "по логам httpx видно живые запросы.",
+        len(rows),
+        n_metrics,
+        n_tasks,
+        ragas_max_workers,
+        show_pb,
+    )
+
     ragas_result = ragas_evaluate(
         ragas_ds,
         metrics=metrics,
         llm=ragas_llm,
         embeddings=ragas_embeddings,
         run_config=run_config,
+        show_progress=show_pb,
     )
     scores_list = ragas_result.scores
     if len(scores_list) != len(rows):

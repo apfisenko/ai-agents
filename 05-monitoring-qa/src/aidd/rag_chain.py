@@ -124,7 +124,7 @@ def _map_rag_chain_exception(exc: BaseException) -> BaseException:
     if is_insufficient_credits_error(exc):
         logger.warning("RAG LLM insufficient credits (%s)", type(exc).__name__)
         return LlmInsufficientCreditsError()
-    logger.warning("RAG chain failed: %s", type(exc).__name__)
+    logger.warning("RAG chain failed: %s: %s", type(exc).__name__, exc)
     return LlmInvocationError()
 
 
