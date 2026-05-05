@@ -1,0 +1,6 @@
+# Опционально: сеть контейнера = сеть хоста (Linux / Docker Engine в WSL).
+# Запуск: docker compose -f docker-compose.yml -f docker-compose.host-network.yml up --build
+# На Docker Desktop с WSL2 backend часто не поддерживается — см. ReadMe (netsh portproxy).
+services:
+  bot:
+    network_mode: host
