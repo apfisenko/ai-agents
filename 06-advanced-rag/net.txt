@@ -1,0 +1,26 @@
+# ADMIN
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=11301 connectaddress=127.0.0.1 connectport=1301
+netsh advfirewall firewall add rule name="AIDD proxy 11301" dir=in action=allow protocol=TCP localport=11301
+
+netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=1301
+netsh advfirewall firewall delete rule name="AIDD proxy 11301"
+
+netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=1301
+
+netsh interface portproxy show all
+
+
+Решение: другой внешний порт, тот же Clash снутри
+Снова (от админа) добавьте перенос 11301 ? 1301 и правило в брандмауэре для 11301:
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=11301 connectaddress=127.0.0.1 connectport=1301
+netsh advfirewall firewall add rule name="AIDD proxy 11301" dir=in action=allow protocol=TCP localport=11301
+В .env у вас уже выставлено HTTPS_PROXY=http://127.0.0.1:11301 (я обновил файл): бот с хоста и в Docker бьёт в 11301 на мосте, Windows перенаправляет в Clash на 1301 — 1301 снаружи не перехватываем, VPN не трогаем.
+
+AIDD_WINDOWS_PROXY_HOST=172.24.0.1 (или как у вас .\make.ps1 docker-windows-host-ip) оставьте.
+
+.\make.ps1 docker-up
+
+Если uv run вдруг перестанет ходить в сеть, проверьте netsh interface portproxy show all — должна быть одна строка 11301 ? 1301.
+
+Обновлены ReadMe и docker-portproxy-hint: там описан вариант с 11301, если 1301 конфликтует с VPN.
+

@@ -1,0 +1,36 @@
+---
+description:
+alwaysApply: true
+---
+
+# Conventions
+
+**Продуктовый замысел** — [docs/idea.md](docs/idea.md). **Нормативная спецификация** (стек, RAG, режимы retrieval, конфигурация, команды, мониторинг) — [docs/vision.md](docs/vision.md).
+
+## Дисциплина агента
+
+- Не дублировать перечни переменных, режимов и метрик из vision в этом файле.
+- Не расширять scope и не менять архитектуру вразрез с vision; при необходимости новой возможности — сначала правка vision, затем код.
+- Соблюдать разделы vision «Цель и границы», «Advanced RAG и референсы», «Диалог и RAG», «Конфигурация», «Мониторинг, синтез датасетов и RAGAS».
+
+## Якоря (кратко)
+
+- Python **3.11**, **uv**; Telegram: **aiogram 3.x**, async, **polling**.
+- RAG: **LangChain**, **LCEL**; хранилище — **`InMemoryVectorStore`**; индексация при старте и команды **`/index`**, **`/index_status`** — см. vision.
+- Режимы retrieval, гибрид (**semantic + BM25**), **cross-encoder reranker**, провайдеры embeddings — только по vision.
+- LLM провайдер — **OpenRouter** (OpenAI-совместимый клиент): переменные и имена моделей — **vision § «Конфигурация»**.
+- LangSmith, датасет, RAGAS, **`SHOW_SOURCES`** — по vision; зависимости проекта — **pyproject.toml / vision**, не дублировать полный список здесь.
+
+## Принципы кода
+
+- **KISS**, **YAGNI**; **ООП** по делу; **один класс — один файл**, где это уже принято в проекте.
+- Структура каталогов и модули (**`rag_chain.py`**, **`indexing.py`**, **`dataset_synthesizer.py`**, **`evaluation.py`**) — ориентир из vision.
+
+## Конфигурация и безопасность
+
+- Секреты только в env; в git — **`.env.example`**. Обязательные переменные — явная ошибка при старте (перечень в vision).
+- Логи: **`logging`**, без токенов, ключей и лишних дампов.
+
+## Прочее
+
+- Docker / Make / PowerShell не расширять сверх целей vision.
