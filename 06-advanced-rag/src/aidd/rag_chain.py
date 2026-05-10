@@ -161,7 +161,7 @@ class RagChainRunner:
             api_key=config.open_api_key,
             base_url=config.open_base_url,
             temperature=0.4,
-            max_tokens=512,
+            max_tokens=2048,
         )
         self._llm_answer = ChatOpenAI(
             model=config.llm_model,

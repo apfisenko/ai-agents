@@ -2,7 +2,7 @@
 # netsh: .\make.ps1 portproxy-up   (с админа)  |  -ListenPort 11301 -ConnectPort 1301
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("install", "run", "smoke-index", "dataset", "dataset-upload", "docker-build", "docker-up", "docker-down", "docker-up-host", "docker-down-host", "docker-ps", "docker-check", "docker-windows-host-ip", "docker-portproxy-hint", "portproxy-up", "portproxy-down", "help")]
+    [ValidateSet("install", "run", "smoke-index", "smoke-rag-chain", "dataset", "dataset-upload", "docker-build", "docker-up", "docker-down", "docker-up-host", "docker-down-host", "docker-ps", "docker-check", "docker-windows-host-ip", "docker-portproxy-hint", "portproxy-up", "portproxy-down", "help")]
     [string] $Target = "help",
     [int] $ListenPort = 11301,
     [int] $ConnectPort = 1301
@@ -36,6 +36,7 @@ switch ($Target) {
     "install" { & uv sync }
     "run" { & uv run python -m aidd }
     "smoke-index" { & uv run python -m aidd.smoke_index }
+    "smoke-rag-chain" { & uv run python -m aidd.smoke_rag_chain }
     "dataset" { & uv run python -m aidd.dataset_synthesizer synthesize }
     "dataset-upload" { & uv run python -m aidd.dataset_synthesizer upload }
     "docker-build" { Invoke-DockerComposeViaWsl -ComposeArguments @("compose", "build") }
@@ -69,7 +70,8 @@ switch ($Target) {
         Write-Host "  install       - uv sync"
         Write-Host "  run           - uv run python -m aidd"
         Write-Host "  smoke-index   - uv run python -m aidd.smoke_index (RAG-индексация, см. .env.example)"
-        Write-Host "  dataset       - синтез datasets/SBERAGENTS_RAG_EVALUATION_DATASET_V1.json (OPEN_*, LLM_*; vision §10)"
+        Write-Host "  smoke-rag-chain - полный RAG из .env: индекс + один ответ (регрессия ит.15; см. .env.example)"
+        Write-Host "  dataset       - синтез datasets/06-rag-qa-dataset.json (OPEN_*, LLM_*; vision §10)"
         Write-Host "  dataset-upload - выгрузка JSON в LangSmith (LANGSMITH_API_KEY, LANGSMITH_DATASET_NAME)"
         Write-Host "  docker-build  - wsl: docker compose build (from repo root)"
         Write-Host "  docker-up     - wsl: docker compose up --build"

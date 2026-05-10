@@ -27,7 +27,7 @@ from ragas.metrics import (
 )
 from ragas.run_config import RunConfig
 
-from aidd.indexing import DEFAULT_EMBEDDING_MODEL, make_embeddings
+from aidd.indexing import make_embeddings, make_huggingface_embeddings
 from aidd.rag_chain import RagChainRunner
 
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ def _langsmith_api_key() -> str:
 def _dataset_name() -> str:
     return (
         (os.environ.get("LANGSMITH_DATASET_NAME") or "").strip()
-        or "SBERAGENTS_RAG_EVALUATION_DATASET_V1"
+        or "06-rag-qa-dataset"
     )
 
 
@@ -211,7 +211,8 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
     base = cfg.open_base_url.rstrip("/")
     router_key = cfg.open_api_key
     ragas_llm_id = cfg.ragas_llm_model.strip()
-    emb_raw = (cfg.ragas_embedding_model or DEFAULT_EMBEDDING_MODEL).strip()
+    emb_raw = cfg.ragas_embedding_model.strip()
+    ragas_emb_prov = cfg.ragas_embedding_provider
 
     lc_llm = ChatOpenAI(
         model=ragas_llm_id,
@@ -220,11 +221,14 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
         temperature=0.0,
         max_tokens=2048,
     )
-    lc_embeddings = make_embeddings(
-        open_api_key=router_key,
-        open_base_url=base,
-        embedding_model=emb_raw,
-    )
+    if ragas_emb_prov == "huggingface":
+        lc_embeddings = make_huggingface_embeddings(embedding_model=emb_raw)
+    else:
+        lc_embeddings = make_embeddings(
+            open_api_key=router_key,
+            open_base_url=base,
+            embedding_model=emb_raw,
+        )
     ragas_llm = LangchainLLMWrapper(lc_llm)
     ragas_embeddings = LangchainEmbeddingsWrapper(lc_embeddings)
     metrics = _build_ragas_metrics(ragas_llm, ragas_embeddings)
@@ -248,10 +252,12 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
         )
 
     logger.info(
-        "RAGAS eval: LangSmith dataset=%s, примеров=%s, ragas_llm=%s ragas_emb=%s",
+        "RAGAS eval: LangSmith dataset=%s, примеров=%s, ragas_llm=%s "
+        "ragas_emb_provider=%s ragas_emb_model=%s",
         ds_name,
         len(examples),
         ragas_llm_id,
+        ragas_emb_prov,
         emb_raw,
     )
 
@@ -266,7 +272,8 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
             "pipeline": "aidd.telegram_rag",
             "dataset": ds_name,
             "ragas_llm": ragas_llm_id,
-            "ragas_embedding": emb_raw,
+            "ragas_embedding_provider": ragas_emb_prov,
+            "ragas_embedding_model": emb_raw,
         },
         max_concurrency=1,
         blocking=False,

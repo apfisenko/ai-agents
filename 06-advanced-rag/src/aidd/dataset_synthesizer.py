@@ -31,7 +31,7 @@ from aidd.indexing import (
 
 logger = logging.getLogger(__name__)
 
-DATASET_FILENAME: Final[str] = "SBERAGENTS_RAG_EVALUATION_DATASET_V1.json"
+DATASET_FILENAME: Final[str] = "06-rag-qa-dataset.json"
 SYNTHESIS_SYSTEM: Final[str] = (
     "Ты эксперт по созданию вопросно-ответных пар для оценки RAG.\n"
     "На основе текста создай ровно {num_questions} вопрос(а/ов) и короткий точный ответ "
@@ -389,7 +389,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
         print(f"Файл датасета не найден: {path}", file=sys.stderr)
         return 1
 
-    name = (os.environ.get("LANGSMITH_DATASET_NAME") or "").strip() or "SBERAGENTS_RAG_EVALUATION_DATASET_V1"
+    name = (os.environ.get("LANGSMITH_DATASET_NAME") or "").strip() or "06-rag-qa-dataset"
     desc = (os.environ.get("LANGSMITH_DATASET_DESCRIPTION") or "").strip() or (
         "Q&A для оценки RAG (синтез по PDF + JSON), проект aidd"
     )
@@ -424,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     parser = argparse.ArgumentParser(
-        description="Синтез datasets/SBERAGENTS_RAG_EVALUATION_DATASET_V1.json и выгрузка в LangSmith."
+        description="Синтез datasets/06-rag-qa-dataset.json и выгрузка в LangSmith."
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

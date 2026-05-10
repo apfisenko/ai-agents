@@ -214,7 +214,7 @@ flowchart LR
 
 1. **Источники в ответе:** **`SHOW_SOURCES`**; цепочка возвращает **ответ + retrieved (после rerank, если включён)** документы.
 2. **LangSmith:** корректные **`LANGSMITH_*`**; отдельный код трейсинга в цепочке **не обязателен**, если LangChain покрывает сценарий.
-3. **Синтез датасета:** без изменения смысла прежнего плана: **`dataset_synthesizer.py`**, **`datasets/SBERAGENTS_RAG_EVALUATION_DATASET_V1.json`**, **`make dataset`**, **`make dataset-upload`**.
+3. **Синтез датасета:** без изменения смысла прежнего плана: **`dataset_synthesizer.py`**, **`datasets/06-rag-qa-dataset.json`**, **`make dataset`**, **`make dataset-upload`**.
 4. **Оценка (`evaluation.py`):** **`/evaluate_dataset`**, метрики **faithfulness**, **answer_relevancy**, **answer_correctness**, **answer_similarity**, **context_recall**, **context_precision**; **feedback в LangSmith**. Эмбеддинги и LLM для RAGAS — из §9; ориентир по сценарию — **`data/rag-evaluation-practice.ipynb`**.
 
 При смене провайдера embeddings оценка должна оставаться **воспроизводимой** при заданных env.

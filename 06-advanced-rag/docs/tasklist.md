@@ -160,7 +160,7 @@
 
 ### Итерация 10 — ДЗ-5: синтез датасета, JSON, make dataset / dataset-upload
 
-**Цель:** модуль **`dataset_synthesizer.py`**: по 2 чанка с каждого PDF в `data/`, LLM-генерация Q&A по чанку, слияние с готовыми Q&A из JSON при наличии, сохранение в **`datasets/SBERAGENTS_RAG_EVALUATION_DATASET_V1.json`**, загрузка в LangSmith с **пропуском дубликатов**. Make-цели **`dataset`** и **`dataset-upload`**.
+**Цель:** модуль **`dataset_synthesizer.py`**: по 2 чанка с каждого PDF в `data/`, LLM-генерация Q&A по чанку, слияние с готовыми Q&A из JSON при наличии, сохранение в **`datasets/06-rag-qa-dataset.json`**, загрузка в LangSmith с **пропуском дубликатов**. Make-цели **`dataset`** и **`dataset-upload`**.
 
 **Проверка:** `make dataset` создаёт/обновляет файл датасета; `make dataset-upload` отправляет набор в LangSmith без повторов при повторном запуске.
 
@@ -193,7 +193,7 @@
 | 12 | ДЗ-6: зависимости и конфигурация режимов и провайдеров | ✅ Done |
 | 13 | ДЗ-6: индексация и hybrid retrieval (semantic + BM25) | ✅ Done |
 | 14 | ДЗ-6: cross-encoder reranking и LCEL-цепочка с query transform | ✅ Done |
-| 15 | ДЗ-6: RAGAS, эмбеддинги по провайдеру, `.env.example` и регрессия | 📋 Planned |
+| 15 | ДЗ-6: RAGAS, эмбеддинги по провайдеру, `.env.example` и регрессия | ✅ Done |
 
 ---
 
@@ -239,6 +239,6 @@
 
 **Проверка:** оценка завершается для обоих провайдеров embeddings (или задокументирован минимально поддерживаемый набор); feedback в LangSmith при настроенном проекте.
 
-- [ ] RAGAS + провайдеры embeddings
-- [ ] Актуальный `.env.example` и комментарии к режимам
-- [ ] Регрессия: диалог, `/index`, `SHOW_SOURCES`, evaluate
+- [x] RAGAS + провайдеры embeddings
+- [x] Актуальный `.env.example` и комментарии к режимам
+- [x] Регрессия: диалог, `/index`, `SHOW_SOURCES`, evaluate

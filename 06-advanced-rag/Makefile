@@ -1,5 +1,5 @@
 # Локальный запуск (дублируется в make.ps1 для PowerShell: .\make.ps1 install | run).
-.PHONY: install run smoke-index dataset dataset-upload docker-build docker-up docker-down docker-up-host docker-down-host docker-ps docker-check docker-windows-host-ip docker-portproxy-hint portproxy-up portproxy-down
+.PHONY: install run smoke-index smoke-rag-chain dataset dataset-upload docker-build docker-up docker-down docker-up-host docker-down-host docker-ps docker-check docker-windows-host-ip docker-portproxy-hint portproxy-up portproxy-down
 
 install:
 	uv sync
@@ -10,6 +10,10 @@ run:
 # Smoke RAG-индексации (итерация 5): нужны OPEN_API_KEY, OPEN_BASE_URL; опционально EMBEDDING_MODEL
 smoke-index:
 	uv run python -m aidd.smoke_index
+
+# Регрессия RAG-цепочки (ит.15): полный AppConfig из .env, индекс, один ainvoke (диалог как в боте)
+smoke-rag-chain:
+	uv run python -m aidd.smoke_rag_chain
 
 # Датасет Q&A для RAGAS / LangSmith (итерация 10): нужны OPEN_* и LLM_*; см. docs/vision.md §10
 dataset:
