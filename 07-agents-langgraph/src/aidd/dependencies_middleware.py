@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 
+from aidd.bank_agent import BankAgentRunner
 from aidd.config import AppConfig
 from aidd.conversation_store import ConversationStore
 from aidd.rag_chain import RagChainRunner
@@ -16,12 +17,14 @@ class DependenciesMiddleware(BaseMiddleware):
         self,
         conversation_store: ConversationStore,
         rag_runner: RagChainRunner,
+        bank_runner: BankAgentRunner,
         app_config: AppConfig,
         vector_index: VectorIndexState,
     ) -> None:
         super().__init__()
         self._conversation_store = conversation_store
         self._rag_runner = rag_runner
+        self._bank_runner = bank_runner
         self._app_config = app_config
         self._vector_index = vector_index
 
@@ -33,6 +36,7 @@ class DependenciesMiddleware(BaseMiddleware):
     ) -> Any:
         data["conversation_store"] = self._conversation_store
         data["rag_runner"] = self._rag_runner
+        data["bank_runner"] = self._bank_runner
         data["app_config"] = self._app_config
         data["vector_index"] = self._vector_index
         return await handler(event, data)

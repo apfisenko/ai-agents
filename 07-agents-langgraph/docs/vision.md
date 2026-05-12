@@ -1,20 +1,22 @@
 # Техническое видение проекта
 
-Отправная точка для реализации [idea.md](idea.md). Цель — **рабочий RAG-диалог в Telegram** без лишней сложности: **KISS**, **YAGNI**, без оверинжиниринга.
+Отправная точка для реализации [idea.md](idea.md). Цель — **рабочий диалог в Telegram** с **ReAct-агентом** и RAG-инструментом без лишней сложности: **KISS**, **YAGNI**, без оверинжиниринга.
 
 ---
 
 ## 1. Цель и границы
 
-**Цель:** Telegram-бот на **aiogram** (async, **long polling**), который ведёт текстовый диалог и отвечает через **LangChain RAG** в стиле **LCEL**: перед поиском выполняется **трансформация запроса с учётом истории**, затем **retrieval** в одном из трёх режимов (см. ниже), после чего LLM формирует ответ по **истории и контексту** из отобранных чанков.
+**Цель:** Telegram-бот на **aiogram** (async, **long polling**), который ведёт текстовый диалог. Ответы формирует **LangChain 1.0**-агент, собранный через **`create_agent()`** с **checkpointer** **`MemorySaver`**. Единственный обязательный инструмент домена — **`rag_search`**: обёртка над существующим retrieval (режим из конфига), которую модель вызывает, когда нужны факты из документов. **OpenRouter** (OpenAI-совместимый API) — провайдер чат-модели.
 
-**Режимы retrieval (переключаются конфигурацией, без правки кода):**
+**Режимы retrieval (переключаются конфигурацией, без правки кода):** выбираются переменной **`RAG_RETRIEVAL_MODE`** — те же три значения, что и ранее:
 
 | Режим | Смысл |
 |--------|--------|
-| **semantic** | только векторный поиск (**топ-K** из `InMemoryVectorStore`), как в базовом сценарии. |
-| **hybrid** | **семантика + BM25** с объединением списков кандидатов (по смыслу **Part 1** в `data/advanced-hybrid-rag.ipynb`: `BM25Retriever` + семантический retriever + ensemble). |
-| **hybrid_rerank** | гибрид, затем **cross-encoder reranking** кандидатов перед подстановкой в промпт (по смыслу **Part 2** той же тетрадки, `sentence_transformers.CrossEncoder`). |
+| **semantic** | только векторный поиск (**топ-K** из `InMemoryVectorStore`). |
+| **hybrid** | **семантика + BM25** (`EnsembleRetriever` и веса из env). |
+| **hybrid_rerank** | гибрид, затем **cross-encoder reranking** перед отдачей результатов из инструмента. |
+
+Инструмент **`rag_search`** не дублирует отдельный «query transformation»-узел LCEL: **поисковую строку формирует агент** в аргументах вызова (и при необходимости может вызывать инструмент несколько раз с разными запросами).
 
 **Источники знаний (локально в репозитории):**
 
@@ -24,30 +26,28 @@
 | `data/usl_r_vkladov.pdf` | условия по вкладам |
 | `data/sberbank_help_documents.json` | справочные тексты (JSON) |
 
-**Векторное хранилище:** **`InMemoryVectorStore`** (LangChain). Персистентность индекса на диск **не требуется**: индекс пересобирается при необходимости (см. §7).
+**Векторное хранилище:** **`InMemoryVectorStore`**. Персистентность индекса на диск **не требуется**: индекс пересобирается при необходимости (см. §7).
 
-**История диалога:** только **в памяти процесса** по `chat_id`; после перезапуска контекст обнуляется. Формат сообщений для цепочек LangChain — **`HumanMessage` / `AIMessage` / `SystemMessage`** (`langchain_core.messages`), а не произвольные dict.
+**История диалога:** в **checkpointer** агента по **`thread_id`**, согласованному с **`chat_id`** Telegram (в процессе; после перезапуска — поведение `MemorySaver` как раньше у in-memory хранилища). Сообщения — **`langchain_core.messages`** (`HumanMessage`, `AIMessage`, `ToolMessage`, …).
 
-**Мониторинг и качество:** при необходимости бот может **показывать источники** найденных фрагментов (файл, страницы); запросы **трейсятся в LangSmith** через переменные окружения (поддержка LangChain без обязательной доработки кода пайплайна). Для регрессий — **синтез локального датасета Q&A**, загрузка наборов в LangSmith и **оценка ответов метриками RAGAS** с отправкой результатов как feedback в LangSmith (§10).
+**Мониторинг и качество:** **`SHOW_SOURCES`**; трейсинг **LangSmith** через **`LANGSMITH_*`**. Синтез датасета и **RAGAS** — §10; при оценке каждый прогон изолировать **уникальным `thread_id` / `chat_id`**, чтобы история в `MemorySaver` не смешивала примеры.
 
 **Вне scope (пока не решено иначе):**
 
 - Отдельная серверная БД для истории или для векторов.
 - Webhook Telegram.
-- Сложная маршрутизация, очереди, отдельный API-сервер только под RAG.
+- Дополнительные инструменты (веб-поиск, действия в банковских системах) без явного расширения idea/vision.
+- Отдельный API-сервер только под RAG.
 
 ---
 
 ## 2. Референсы пайплайна и Advanced RAG
 
-**Базовый сценарий (история + трансформация запроса):** ноутбук **`data/naive-rag.ipynb`**, цепочка **`rag_query_transform_chain`**. В продуктовом коде этап **query transformation по истории переписки** сохраняется; финальная сборка — **Runnable / LCEL**, без отказа от этого этапа.
+**Агент и инструмент (обёртка, описание, `create_agent`):** ноутбук **`data/agent.ipynb`**, раздел **II — LangChain 1.0 `create_agent`** (паттерн ReAct, список tools, high-level API).
 
-**Продвинутый retrieval:** ноутбук **`data/advanced-hybrid-rag.ipynb`**:
+**Retrieval (гибрид, rerank), индексация, чанки:** **`data/advanced-hybrid-rag.ipynb`** (Part 1 — hybrid, Part 2 — rerank). Загрузка и нарезка документов — согласованы с файлами из §1.
 
-- **Part 1 — Hybrid RAG (Semantic + BM25):** семантический retriever поверх `InMemoryVectorStore`, **`BM25Retriever`** из **`rank-bm25`** (через **`langchain_community`**), объединение через **`EnsembleRetriever`** с настраиваемыми весами.
-- **Part 2 — Cross-Encoder Reranking:** сужение/упорядочивание кандидатов моделью cross-encoder перед генерацией ответа.
-
-Реализацию в коде бота нужно **воссоздать по смыслу** этих схем вместе с трансформацией запроса из naive-rag, адаптировав загрузку документов под файлы из §1 и конфигурацию под §9.
+**Устаревший для точки входа продуктовый поток «query transform → LCEL цепочка → ответ»** заменён агентом; идеи **naive-rag** могут использоваться локально как ориентир по промптам и данным, но **не** как обязательная архитектура ответа.
 
 ---
 
@@ -57,11 +57,11 @@
 |--------|--------|------------|
 | Язык | **Python 3.11** | Воспроизводимость окружения. |
 | Зависимости | **uv** | `pyproject.toml`, lock, `uv sync` / `uv run`. |
-| RAG / оркестрация | **LangChain** (ядро **LCEL**, `langchain_core`, интеграции) | Loaders, OpenAI-совместимый chat; **community** — BM25 и др. |
-| Гибрид и реранкер | **`langchain-community`**, **`rank-bm25`**, **`sentence-transformers`** | BM25 + локальный cross-encoder; пути импорта — в духе референсной тетрадки. |
-| Наблюдаемость датасетов | **LangSmith** (`LANGSMITH_*`), **`langsmith`**, **`datasets`**, **`ragas`** (≥ **0.2.0**) | Трейсинг через окружение. |
-| LLM и эмбеддинги (опция API) | **OpenAI-совместимый API** через **`langchain_openai`** | Провайдер — **OpenRouter**: **`OPEN_BASE_URL`** (типично `https://openrouter.ai/api/v1`), ключ **`OPEN_API_KEY`**. Имена моделей — из **`.env`**. |
-| Локальные эмбеддинги (опция HF) | **`sentence-transformers`** (+ обёртка LangChain для HuggingFace, как в тетрадке) | Выбор провайдера — конфиг (§9). |
+| Агент и RAG | **LangChain 1.x** | **`create_agent`**, инструменты, **checkpointer `MemorySaver`**. Ядро: `langchain_core`, совместимые интеграции. |
+| Гибрид и реранкер | **`langchain-community`**, **`rank-bm25`**, **`sentence-transformers`** | BM25 + cross-encoder — по референсной тетрадке. |
+| Наблюдаемость датасетов | **LangSmith**, **`datasets`**, **`ragas`** (≥ **0.2.0**) | Трейсинг через окружение. |
+| LLM и эмбеддинги (опция API) | **OpenAI-совместимый API** через **`langchain_openai`** | Провайдер — **OpenRouter**: **`OPEN_BASE_URL`** (типично `https://openrouter.ai/api/v1`), **`OPEN_API_KEY`**. Имена моделей — из **`.env`**. |
+| Локальные эмбеддинги (опция HF) | **`sentence-transformers`** (+ обёртка LangChain для HuggingFace) | Выбор — конфиг (§9). |
 | Telegram | **aiogram 3.x**, async | **Polling** только. |
 | Контейнеры | **Docker** + **Docker Compose** | Один сервис приложения; том под векторную БД не нужен. |
 | Сборка локально | **GNU Make** | Цели для uv, run, Docker. |
@@ -71,9 +71,8 @@
 
 ## 4. Принципы разработки
 
-- **KISS / YAGNI:** один понятный поток «сообщение → история в messages → query transform → retrieval (режим из конфига) → [опц. rerank] → ответ»; не вводить абстракции без явной пользы.
-- **Модульность:** отдельные узлы или небольшие модули для построения retriever’ов, reranker’а и сборки LCEL-цепочки (без «универсального движка» на будущее).
-- **ООП** там, где упрощает поддержку; **один класс — один файл**, если не очевидный модуль-утилита без классов.
+- **KISS / YAGNI:** один понятный поток «сообщение → история в агенте → при необходимости `rag_search` → финальный текст»; общая логика построения retriever/rerank — переиспользуется инструментом и оценкой, без абстрактного «движка агентов».
+- **Модульность:** отдельные модули для retriever factory, описания **`rag_search`**, сборки агента (`create_agent`), при необходимости тонкий слой между Telegram и `agent.stream`.
 
 ---
 
@@ -85,8 +84,9 @@
 .
 ├── data/
 │   ├── naive-rag.ipynb
-│   ├── advanced-hybrid-rag.ipynb   # референс гибрида и rerank
+│   ├── advanced-hybrid-rag.ipynb
 │   ├── rag-evaluation-practice.ipynb
+│   ├── agent.ipynb                 # референс create_agent и tool
 │   ├── *.pdf
 │   └── sberbank_help_documents.json
 ├── docs/
@@ -94,7 +94,7 @@
 │   ├── vision.md
 │   └── tasklist.md
 ├── prompts/
-│   └── system.txt
+│   └── system.txt                  # системный промпт агента (роль банка, правила вызова rag_search, few-shot)
 ├── src/
 │   └── <package_name>/
 │       ├── main.py
@@ -102,10 +102,11 @@
 │       ├── logging_setup.py
 │       ├── telegram_bot.py
 │       ├── handlers/
-│       ├── conversation_store.py
-│       ├── indexing.py              # эмбеддинги по выбранному провайдеру, InMemoryVectorStore, при необходимости список чанков для BM25
-│       ├── rag_chain.py             # LCEL: query transform → retrieve → [rerank] → ответ + документы
-│       ├── retrievers/              # опционально: semantic / hybrid / фабрика по режиму
+│       ├── indexing.py             # эмбеддинги, InMemoryVectorStore, чанки для BM25
+│       ├── rag_chain.py             # переиспользуемые части retrieval / фабрика (или переименование по факту)
+│       ├── retrievers/              # опционально
+│       ├── tools/                   # например rag_search LangChain StructuredTool / @tool
+│       ├── bank_agent.py           # или agent.py: create_agent + MemorySaver
 │       ├── dataset_synthesizer.py
 │       └── evaluation.py
 ├── datasets/
@@ -117,7 +118,7 @@
 └── .env.example
 ```
 
-Каталог **`retrievers/`** — по необходимости; допустимо держать логику в `indexing.py` / `rag_chain.py`, если объём остаётся небольшим (**YAGNI**).
+**YAGNI:** не плодить каталоги; если файл один — допустимо держать tool рядом с агентом до роста кода.
 
 ---
 
@@ -131,23 +132,25 @@ flowchart LR
   subgraph app [Application]
     Poll[Polling]
     H[Handlers]
-    Mem[ConversationStore]
-    Idx[Indexing]
-    RAG[RAG chain LCEL]
+    BA[Bank agent create_agent]
+    Mem[MemorySaver thread_id chat_id]
+    Idx[Indexing / retrievers]
+    RAG[Tool rag_search]
   end
   User <--> Poll
   Poll --> H
-  H --> Mem
-  H --> RAG
+  H --> BA
+  BA --> Mem
+  BA --> RAG
   RAG --> Idx
   Idx -.-> RAG
-  RAG --> H
+  BA --> H
   H --> Poll
 ```
 
-- **Indexing:** читает файлы из `data/` (перечень из §1), режет на чанки, строит **`InMemoryVectorStore`** и при необходимости **тот же набор `Document` для BM25** (общий список чанков в памяти — допустимое **KISS**-решение).
-- **ConversationStore:** `chat_id` → последовательность **`HumanMessage` / `AIMessage`**.
-- **RAG chain:** **query transformation** (история → поисковая строка, по смыслу naive-rag) → **retrieval** в режиме из конфига → при **`hybrid_rerank`** — **cross-encoder rerank** → контекст → ответ LLM с историей. Цепочка возвращает **текст ответа и документы с метаданными** для **`SHOW_SOURCES`**.
+- **Indexing:** как ранее — чанки, вектора, BM25-пул при необходимости.
+- **Агент:** `create_agent(model, tools=[rag_search, ...], system_prompt=..., checkpointer=MemorySaver())`.
+- **`rag_search`:** принимает поисковую строку (и при необходимости минимальный набор параметров, зафиксированный в описании инструмента — без раздувания); внутри — вызов retriever для **`RAG_RETRIEVAL_MODE`**; результат — см. §8 и контракт ниже.
 
 ---
 
@@ -155,22 +158,40 @@ flowchart LR
 
 | Команда / событие | Поведение |
 |-------------------|-----------|
-| **Старт приложения** | **полная переиндексация** (векторное хранилище и данные, необходимые для BM25, согласованы с текущими чанками). |
-| **`/index`** | явная **полная переиндексация**. |
-| **`/index_status`** | статус индекса — как минимум **число чанков** (и при необходимости краткая пометка о готовности / ошибке последней сборки). |
-| **`/evaluate_dataset`** | полный цикл **RAGAS** (§10); параметры LLM и embeddings для RAGAS — из env. |
+| **Старт приложения** | полная переиндексация |
+| **`/index`** | явная полная переиндексация |
+| **`/index_status`** | статус — как минимум **число чанков** |
+| **`/evaluate_dataset`** | полный цикл **RAGAS** (§10) |
 
-Ошибки индексации: логировать; пользователю при **`/index`** — нейтральное сообщение; при старте — падение с понятной ошибкой или явный отказ стартовать (единый стиль в коде).
+Ошибки индексации — логировать; пользователю при **`/index`** — нейтральное сообщение; при старте — единый стиль с понятной ошибкой.
 
 ---
 
-## 8. Диалог и RAG
+## 8. Диалог, инструмент `rag_search`, ответ пользователю
 
-1. Входящее текстовое сообщение добавляется в историю как **`HumanMessage`**.
-2. Перед retrieval выполняется **query transformation** с подстановкой **всей релевантной истории** в промпт (как в **`data/naive-rag.ipynb`**, `rag_query_transform_chain`).
-3. **Retrieval** зависит от **`RAG_RETRIEVAL_MODE`**: только семантика, **hybrid** (вектор + BM25 + ensemble), или **hybrid_rerank** (то же + cross-encoder). Лимиты **`K`** для семантики и BM25, веса ensemble и параметры rerank — **раздельно в конфиге** (§9); итоговое число чанков в промпте — **не больше заданного финального K** (или эквивалентное имя в `.env.example`).
-4. LLM генерирует ответ с учётом **контекста** и **истории**; ответ сохраняется как **`AIMessage`**.
-5. Системный текст — **`SYSTEM_PROMPT_PATH`**.
+1. Входящее сообщение добавляется в состояние агента как **`HumanMessage`** (через `agent`/`Runnable` invoke API — как принято для `create_agent` + checkpointer).
+
+2. **Получение ответа:** использовать **`bank_agent.stream(..., stream_mode="values")`** (или эквивалентное имя графа). Реализовать **функцию логирования шагов** (например итерации/ReAct-состояние без утечки секретов). При **`AIMessage` без текста и без `tool_calls`** — **warning** в лог. **Обязательный fallback** для пользователя при пустом/неконсистентном финальном ответе (короткое нейтральное сообщение).
+
+3. **`rag_search` — контракт возврата:** строка JSON с **`ensure_ascii=False`**. Структура:
+
+```json
+{
+  "sources": [
+    {
+      "source": "<имя файла>",
+      "page_content": "<полный текст чанка>",
+      "page": <номер страницы для PDF или null для безстраничных источников>
+    }
+  ]
+}
+```
+
+Полный **`page_content`** обязателен для корректных **контекстов RAGAS** (§10). Имя ключа **`source`** — файл-источник; **`page`** — только когда метаданные PDF дают номер страницы.
+
+4. **`SHOW_SOURCES`:** из **текущего** пользовательского запроса собрать документы **только из сообщений после последнего `HumanMessage`** в истории: все **`ToolMessage`**, порождённые вызовами **`rag_search`**, распарсить и объединить в перечень для отображения (без дублирования по смыслу — по желанию, KISS: достаточно стабильного списка).
+
+5. Системный промпт — **`SYSTEM_PROMPT_PATH`**: роль банковского ассистента, **жёсткие правила**, **когда** вызывать `rag_search`, **few-shot** примеров и подсказки по формулировке запросов к инструменту.
 
 **Нетекстовые сообщения:** один согласованный вариант на весь проект — игнор или короткое сообщение о поддержке только текста.
 
@@ -178,58 +199,39 @@ flowchart LR
 
 ## 9. Конфигурация
 
-- Источник правды — **переменные окружения** и **`.env`**; в репозиторий — **`.env.example`** без секретов.
-- При старте — **явная ошибка**, если не заданы обязательные переменные (перечень поддерживать актуальным в `.env.example`).
+Источник правды — **переменные окружения** и **`.env`**; пример без секретов — **`.env.example`**. При старте — явная ошибка при отсутствии обязательных переменных.
 
-**Общее:**
+Общее: **`OPEN_API_KEY`**, **`OPEN_BASE_URL`**, модель чата, **`SYSTEM_PROMPT_PATH`**, **`SHOW_SOURCES`**, **`LANGSMITH_*`**.
 
-- **`OPEN_API_KEY`**, **`OPEN_BASE_URL`** — OpenAI-совместимый API (**OpenRouter**).
-- Имя **чат-модели** — отдельная переменная (как уже принято в проекте, например chat-модель для диалога и RAG).
-- **`SYSTEM_PROMPT_PATH`**, **`LLM_MAX_COMPLETION_TOKENS`**, **`RETRIEVER_K`** или согласованный набор **`K`** (см. ниже).
-- **`SHOW_SOURCES`**, **`LANGSMITH_*`**.
+**Retrieval:** **`RAG_RETRIEVAL_MODE`**: `semantic` | `hybrid` | `hybrid_rerank`. **`EMBEDDING_PROVIDER`**, **`EMBEDDING_MODEL`**, **`SEMANTIC_K`** / **`BM25_K`** / **`HYBRID_*_WEIGHT`** / **`RERANK_*`** / **`CROSS_ENCODER_MODEL`** — как в действующей схеме (имена сохранять согласованными с `.env.example`).
 
-**Режим и провайдеры embeddings:**
+**RAGAS:** **`RAGAS_LLM_MODEL`**, **`RAGAS_EMBEDDING_PROVIDER`**, **`RAGAS_EMBEDDING_MODEL`**.
 
-- **`RAG_RETRIEVAL_MODE`**: `semantic` | `hybrid` | `hybrid_rerank`.
-- **`EMBEDDING_PROVIDER`**: `openai` | `huggingface` — от этого зависят клиент индексации и имя модели (API-модель vs HF repo id).
-- Имя модели эмбеддингов для основного пайплайна — **`EMBEDDING_MODEL`** (или раздельные имена, если так проще явно развести провайдеры в `.env.example`; **KISS**: одна пара provider + model, если достаточно).
-
-**Раздельные настройки retrieval (ориентир имён — зафиксировать в `.env.example`):**
-
-- Семантика: **`SEMANTIC_K`** (или переиспользование **`RETRIEVER_K`** при полном совпадении смысла в режиме только semantic).
-- BM25: **`BM25_K`**.
-- Гибрид: веса **`HYBRID_SEMANTIC_WEIGHT`**, **`HYBRID_BM25_WEIGHT`** (сумма 1.0) для `EnsembleRetriever`.
-- Реранкер: **`CROSS_ENCODER_MODEL`** (идентификатор модели для `CrossEncoder`), **`RERANK_CANDIDATE_POOL`** (сколько кандидатов забирать до rerank), **`RERANK_TOP_K`** (сколько документов после rerank отдавать в LLM; согласовать с финальным контекстом).
-
-**RAGAS:**
-
-- **`RAGAS_LLM_MODEL`** — модель для метрик, требующих LLM.
-- **`RAGAS_EMBEDDING_PROVIDER`**, **`RAGAS_EMBEDDING_MODEL`** — провайдер и модель эмбеддингов для RAGAS **независимо или совместно с основным пайплайном**, по выбору в конфиге (допустимо на старте совпадение с основным — проще **KISS**).
-
-Прочие переменные (прокси, `LOG_LEVEL`, токен Telegram) — без нарушения принципа «явная конфигурация, без секретов в логах».
+Подробные перечни имён переменных не дублировать здесь сверх необходимости — поддерживать актуальность в **`.env.example`**.
 
 ---
 
 ## 10. Мониторинг, синтез датасетов и RAGAS
 
-1. **Источники в ответе:** **`SHOW_SOURCES`**; цепочка возвращает **ответ + retrieved (после rerank, если включён)** документы.
-2. **LangSmith:** корректные **`LANGSMITH_*`**; отдельный код трейсинга в цепочке **не обязателен**, если LangChain покрывает сценарий.
-3. **Синтез датасета:** без изменения смысла прежнего плана: **`dataset_synthesizer.py`**, **`datasets/06-rag-qa-dataset.json`**, **`make dataset`**, **`make dataset-upload`**.
-4. **Оценка (`evaluation.py`):** **`/evaluate_dataset`**, метрики **faithfulness**, **answer_relevancy**, **answer_correctness**, **answer_similarity**, **context_recall**, **context_precision**; **feedback в LangSmith**. Эмбеддинги и LLM для RAGAS — из §9; ориентир по сценарию — **`data/rag-evaluation-practice.ipynb`**.
+1. **Источники в ответе и оценке:** приложение сохраняет в результатах ответа **перечень документов, использованных для формирования ответа** (из `rag_search` текущего хода диалога), чтобы **`SHOW_SOURCES`** и **RAGAS** опирались на одну и ту же семантику «что попало в контекст».
 
-При смене провайдера embeddings оценка должна оставаться **воспроизводимой** при заданных env.
+2. **LangSmith:** корректные **`LANGSMITH_*`**.
+
+3. **Синтез датасета:** **`dataset_synthesizer.py`**, **`datasets/`**, **`make dataset`**, **`make dataset-upload`** — без изменения смысла, если не мешает агенту.
+
+4. **Оценка (`evaluation.py`):** **`evaluate_dataset`** — **полностью async**. Внутри целевой callable — **`async def target(...)`**. Использование LangSmith **`aevaluate`**: сначала **`experiment_results = await client.aevaluate(...)`**, затем **`async for result in experiment_results`**. Для RAGAS **contexts** — списки **`page_content`** из извлечённых документов (ответа агента и вызовов **`rag_search`**). На **каждый** элемент датасета / каждый вызов оценки назначать **уникальный `thread_id`** (или эквивалент для конфига памяти), чтобы **`MemorySaver`** не смешивал историю между примерами. Метрики и feedback — как ранее (**faithfulness**, **answer_relevancy**, **answer_correctness**, **answer_similarity**, **context_recall**, **context_precision**), ориентир — **`data/rag-evaluation-practice.ipynb`** с учётом агентской точки входа.
 
 ---
 
 ## 11. Логирование
 
-Стандартный **`logging`**: уровень из env, вывод в stdout/stderr. **Не** логировать токены, ключи API, полные тексты пользователя и большие дампы контекста без необходимости.
+Стандартный **`logging`**: уровень из env. **Не** логировать токены, ключи API, полные тексты пользователя и огромные JSON инструментов без необходимости.
 
 ---
 
 ## 12. Сборка и локальный запуск
 
-**`uv sync`**, **`uv run`** / Makefile, Docker Compose с одним сервисом. Цели **`dataset`** и **`dataset-upload`**. Продакшен-деплой и CI здесь не фиксируются.
+**`uv sync`**, **`uv run`** / Makefile, Docker Compose с одним сервисом. Цели **`dataset`** и **`dataset-upload`**.
 
 ---
 
@@ -239,16 +241,18 @@ flowchart LR
 |------|---------|
 | Знания | PDF + JSON в **`data/`**, перечень в §1 |
 | Векторы | **`InMemoryVectorStore`**, без файлового persistence |
-| Индексация | **старт**, **`/index`**, **`/index_status`** |
-| Диалог | **LangChain messages**; **query transform**; режимы **semantic / hybrid / hybrid_rerank** |
-| Гибрид | **BM25** + семантика + **`EnsembleRetriever`** (тетрадка Part 1) |
-| Реранк | **Cross-encoder** (`sentence-transformers`), тетрадка Part 2 |
+| Индексация | старт, **`/index`**, **`/index_status`** |
+| Диалог | **ReAct**, **`create_agent`**, **`MemorySaver`**, **`thread_id` ↔ `chat_id`** |
+| RAG в продукте | Инструмент **`rag_search`**; режимы **semantic / hybrid / hybrid_rerank** из конфига |
+| Запросы к поиску | Формулирует **LLM-агент**; отдельный LCEL **query transformation** для retrieval **не** используется |
+| Контракт tool | JSON **`{"sources": [...]}`**, **`ensure_ascii=False`**, полный **`page_content`**, **`page`** для PDF |
+| Ответ в Telegram | **`stream_mode="values"`**, лог шагов, **warning** без tool_calls, **fallback** |
+| Источники | После последнего **`HumanMessage`** — все **`ToolMessage(rag_search)`** |
+| Гибрид / реранк | По **`data/advanced-hybrid-rag.ipynb`** |
+| Агент / tool API | По **`data/agent.ipynb`** (раздел **`create_agent`**) |
 | Embeddings | Провайдер **`openai` \| `huggingface`** + модели из env |
-| Источники в UI | **`SHOW_SOURCES`**, ответ + документы |
-| Трейсинг | **LangSmith**, **`LANGSMITH_*`** |
-| Датасет / RAGAS | Как §10; **`RAGAS_EMBEDDING_PROVIDER`**, **`RAGAS_EMBEDDING_MODEL`** |
-| Референсы | **`data/naive-rag.ipynb`**, **`data/advanced-hybrid-rag.ipynb`**, **`data/rag-evaluation-practice.ipynb`** |
-| LLM | **OpenRouter**, **`OPEN_BASE_URL`**, **`OPEN_API_KEY`**, модели из **`.env`** |
-| Зависимости RAG advanced | **`sentence-transformers`**, **`langchain-community`**, **`rank-bm25`** |
+| Трейсинг | **LangSmith** |
+| RAGAS | Async **`aevaluate`**, уникальный **`thread_id`**, контексты из **`page_content`** |
+| LLM | **OpenRouter**, **`OPEN_BASE_URL`**, **`OPEN_API_KEY`** |
 | Telegram | **aiogram**, async, **polling** |
 | Принципы | **KISS**, **YAGNI** |

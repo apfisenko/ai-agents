@@ -5,8 +5,7 @@ from aiogram import Bot, F, Router
 from aiogram.enums import ChatAction, ParseMode
 from aiogram.types import Message
 
-from langchain_core.messages import HumanMessage
-
+from aidd.bank_agent import BankAgentRunner
 from aidd.config import AppConfig
 from aidd.conversation_store import ConversationStore
 from aidd.llm_client import (
@@ -14,7 +13,7 @@ from aidd.llm_client import (
     LlmInvocationError,
     TELEGRAM_REPLY_INSUFFICIENT_CREDITS,
 )
-from aidd.rag_chain import RagChainRunner, format_sources_for_user
+from aidd.rag_chain import format_sources_for_user
 
 router = Router()
 
@@ -73,17 +72,15 @@ async def _typing_while_waiting(bot: Bot, chat_id: int) -> None:
 async def plain_text(
     message: Message,
     conversation_store: ConversationStore,
-    rag_runner: RagChainRunner,
+    bank_runner: BankAgentRunner,
     app_config: AppConfig,
 ) -> None:
     chat_id = message.chat.id
     text = message.text or ""
-    history = conversation_store.get_messages(chat_id)
-    messages = [*history, HumanMessage(content=text)]
     typing_task = asyncio.create_task(_typing_while_waiting(message.bot, chat_id))
     try:
         try:
-            rag_result = await rag_runner.ainvoke(messages)
+            rag_result = await bank_runner.ainvoke_turn(chat_id=chat_id, user_text=text)
         except LlmInsufficientCreditsError:
             await message.answer(TELEGRAM_REPLY_INSUFFICIENT_CREDITS)
             return
@@ -98,8 +95,6 @@ async def plain_text(
             pass
 
     answer_body = rag_result.text
-    conversation_store.append_user_message(chat_id, text)
-    conversation_store.append_assistant_message(chat_id, answer_body)
     reply_for_user = answer_body
     if app_config.show_sources:
         src = format_sources_for_user(rag_result.documents)

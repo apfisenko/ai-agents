@@ -5,30 +5,29 @@ alwaysApply: true
 
 # Conventions
 
-**Продуктовый замысел** — [docs/idea.md](docs/idea.md). **Нормативная спецификация** (стек, RAG, режимы retrieval, конфигурация, команды, мониторинг) — [docs/vision.md](docs/vision.md).
+**Продуктовый замысел** — [docs/idea.md](docs/idea.md). **Нормативная спецификация** — [docs/vision.md](docs/vision.md): агент, инструмент `rag_search`, retrieval, конфигурация, оценка, команды бота.
 
 ## Дисциплина агента
 
-- Не дублировать перечни переменных, режимов и метрик из vision в этом файле.
-- Не расширять scope и не менять архитектуру вразрез с vision; при необходимости новой возможности — сначала правка vision, затем код.
-- Соблюдать разделы vision «Цель и границы», «Advanced RAG и референсы», «Диалог и RAG», «Конфигурация», «Мониторинг, синтез датасетов и RAGAS».
+- Не дублировать в этом файле перечни переменных окружения, таблицы режимов retrieval, состав метрик RAGAS и контракт JSON инструмента — всё в vision и `.env.example`.
+- Не расширять scope и не менять архитектуру вразрез с vision; новая возможность — сначала правка vision, затем код.
+- Соблюдать в vision разделы про цель и границы, референсы, поток диалога и `rag_search`, конфигурацию, мониторинг и RAGAS.
 
 ## Якоря (кратко)
 
 - Python **3.11**, **uv**; Telegram: **aiogram 3.x**, async, **polling**.
-- RAG: **LangChain**, **LCEL**; хранилище — **`InMemoryVectorStore`**; индексация при старте и команды **`/index`**, **`/index_status`** — см. vision.
-- Режимы retrieval, гибрид (**semantic + BM25**), **cross-encoder reranker**, провайдеры embeddings — только по vision.
-- LLM провайдер — **OpenRouter** (OpenAI-совместимый клиент): переменные и имена моделей — **vision § «Конфигурация»**.
-- LangSmith, датасет, RAGAS, **`SHOW_SOURCES`** — по vision; зависимости проекта — **pyproject.toml / vision**, не дублировать полный список здесь.
+- Оркестрация ответа: **LangChain 1.x**, **`create_agent`**, **`MemorySaver`**, **ReAct**; RAG только через инструмент **`rag_search`** (подробности и контракт — vision).
+- Retrieval: режим **`RAG_RETRIEVAL_MODE`** (**semantic**, **hybrid**, **hybrid_rerank**), **`InMemoryVectorStore`**, индексация при старте и **`/index`**, **`/index_status`** — vision.
+- LLM-провайдер — **OpenRouter**: переменные и имена моделей — раздел конфигурации в vision.
 
 ## Принципы кода
 
 - **KISS**, **YAGNI**; **ООП** по делу; **один класс — один файл**, где это уже принято в проекте.
-- Структура каталогов и модули (**`rag_chain.py`**, **`indexing.py`**, **`dataset_synthesizer.py`**, **`evaluation.py`**) — ориентир из vision.
+- Модули-ориентиры: **`indexing.py`**, сборка retrieval, **`evaluation.py`**, **`dataset_synthesizer.py`**, модуль агента и модуль **`rag_search`** — по структуре в vision (имена могут быть уточнены в коде).
 
 ## Конфигурация и безопасность
 
-- Секреты только в env; в git — **`.env.example`**. Обязательные переменные — явная ошибка при старте (перечень в vision).
+- Секреты только в env; в git — **`.env.example`**. Обязательные переменные — явная ошибка при старте (перечень в vision и `.env.example`).
 - Логи: **`logging`**, без токенов, ключей и лишних дампов.
 
 ## Прочее

@@ -1,8 +1,7 @@
-"""Сборка RAG-цепочки по смыслу `rag_query_transform_chain` из `data/naive-rag.ipynb`."""
+"""Сборка RAG-цепочки по смыслу `rag_query_transform_chain` из `data/naive-rag.ipynb` (оценка / регрессия)."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,16 +14,11 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.runnables.config import RunnableConfig
-
-from langchain.retrievers import EnsembleRetriever
-from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.vectorstores import InMemoryVectorStore
 from openai import APIStatusError
-from sentence_transformers import CrossEncoder
 
 from aidd.config import AppConfig
+from aidd.indexed_retrieval import IndexedRetriever
 from aidd.llm_client import (
     LlmInsufficientCreditsError,
     LlmInvocationError,
@@ -47,7 +41,6 @@ class RagInvokeResult:
 
 
 def _aggregate_llm_usage(cb: UsageMetadataCallbackHandler) -> tuple[int, int, int]:
-    """Суммирует usage по всем вызовам чата в цепочке (несколько ключей — разные model_name)."""
     inp = out = tot = 0
     for meta in cb.usage_metadata.values():
         inp += int(meta.get("input_tokens") or 0)
@@ -122,17 +115,6 @@ def _answer_prompt_template(system_prompt_text: str) -> ChatPromptTemplate:
     )
 
 
-def _cap_hybrid_documents(docs_tuple: tuple[Document, ...], limit: int) -> tuple[Document, ...]:
-    if len(docs_tuple) <= limit:
-        return docs_tuple
-    return docs_tuple[:limit]
-
-
-def _documents_from_retriever_output(retrieved: object) -> tuple[Document, ...]:
-    docs_raw = retrieved if isinstance(retrieved, list) else list(retrieved)
-    return tuple(doc for doc in docs_raw if isinstance(doc, Document))
-
-
 def _map_rag_chain_exception(exc: BaseException) -> BaseException:
     if isinstance(exc, APIStatusError):
         if exc.status_code == 402:
@@ -150,12 +132,20 @@ def _map_rag_chain_exception(exc: BaseException) -> BaseException:
 class RagChainRunner:
     """LCEL: query transformation по истории → retrieval → [cross-encoder rerank] → ответ LLM."""
 
-    def __init__(self, config: AppConfig, vector_index: VectorIndexState) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        vector_index: VectorIndexState,
+        *,
+        indexed_retriever: IndexedRetriever | None = None,
+    ) -> None:
         self._config = config
         self._vector_index = vector_index
+        self._indexed = indexed_retriever or IndexedRetriever(config, vector_index)
         logger.info("Модель LLM (ответ бота): %s", config.llm_model)
         logger.info("Модель LLM (преобразование запроса): %s", config.llm_query_transform_model)
         logger.info("Режим retrieval: %s", config.rag_retrieval_mode)
+
         self._llm_query = ChatOpenAI(
             model=config.llm_query_transform_model,
             api_key=config.open_api_key,
@@ -170,6 +160,7 @@ class RagChainRunner:
             temperature=0.7,
             max_tokens=config.llm_max_completion_tokens,
         )
+
         self._query_chain = (
             ChatPromptTemplate.from_messages(
                 [
@@ -181,10 +172,6 @@ class RagChainRunner:
             | StrOutputParser()
         )
         self._answer_prompt = _answer_prompt_template(config.system_prompt_text)
-        self._cross_encoder: CrossEncoder | None = None
-        if config.rag_retrieval_mode == "hybrid_rerank":
-            logger.info("CrossEncoder (rerank): %s", config.cross_encoder_model)
-            self._cross_encoder = CrossEncoder(config.cross_encoder_model)
 
         self._retrieve_prepare = RunnableLambda(self._arunnable_retrieve_prepare_documents)
         self._rag_chain_lcel = (
@@ -200,70 +187,15 @@ class RagChainRunner:
     def app_config(self) -> AppConfig:
         return self._config
 
-    def _retriever(self, store: InMemoryVectorStore) -> BaseRetriever:
-        cfg = self._config
-        if cfg.rag_retrieval_mode == "semantic":
-            return store.as_retriever(search_kwargs={"k": cfg.semantic_k})
-        if cfg.rag_retrieval_mode in ("hybrid", "hybrid_rerank"):
-            chunks = self._vector_index.get_chunk_documents()
-            if not chunks:
-                logger.warning("RAG hybrid: chunk list is missing")
-                raise LlmInvocationError()
-            sem_k = cfg.semantic_k
-            bm_k = cfg.bm25_k
-            if cfg.rag_retrieval_mode == "hybrid_rerank":
-                pool = cfg.rerank_candidate_pool
-                sem_k = max(sem_k, pool)
-                bm_k = max(bm_k, pool)
-            bm25 = BM25Retriever.from_documents(chunks)
-            bm25.k = bm_k
-            semantic_r = store.as_retriever(search_kwargs={"k": sem_k})
-            return EnsembleRetriever(
-                retrievers=[semantic_r, bm25],
-                weights=[cfg.hybrid_semantic_weight, cfg.hybrid_bm25_weight],
-            )
-        raise LlmInvocationError()
-
-    def _finalize_documents(
-        self, search_query: str, fused_docs: tuple[Document, ...]
-    ) -> tuple[Document, ...]:
-        cfg = self._config
-        if cfg.rag_retrieval_mode == "semantic":
-            return fused_docs
-        if cfg.rag_retrieval_mode == "hybrid":
-            return _cap_hybrid_documents(fused_docs, cfg.semantic_k + cfg.bm25_k)
-        pool_docs = _cap_hybrid_documents(fused_docs, cfg.rerank_candidate_pool)
-        if not pool_docs or self._cross_encoder is None:
-            return pool_docs
-        pairs = [(search_query, d.page_content) for d in pool_docs]
-        scores = self._cross_encoder.predict(pairs)
-        ranked = sorted(zip(pool_docs, scores), key=lambda x: x[1], reverse=True)
-        top_k = cfg.rerank_top_k
-        return tuple(d for d, _ in ranked[:top_k])
-
     async def _arunnable_retrieve_prepare_documents(
         self, inp: dict[str, Any], *, config: RunnableConfig | None = None
     ) -> dict[str, Any]:
         messages = inp["messages"]
         search_query = inp["search_query"]
-        store = self._vector_index.get_store()
-        if store is None:
-            logger.warning("RAG: vector store is missing")
-            raise LlmInvocationError()
-        retriever = self._retriever(store)
-        cfg_run = config
         try:
-            retrieved = await retriever.ainvoke(search_query, config=cfg_run)
+            docs_tuple = await self._indexed.aretrieve(search_query, config=config)
         except Exception as e:
             raise _map_rag_chain_exception(e) from None
-
-        fused = _documents_from_retriever_output(retrieved)
-        if self._config.rag_retrieval_mode == "hybrid_rerank":
-            docs_tuple = await asyncio.to_thread(
-                self._finalize_documents, search_query, fused
-            )
-        else:
-            docs_tuple = self._finalize_documents(search_query, fused)
 
         return {
             "messages": messages,

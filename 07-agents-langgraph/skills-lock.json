@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "langchain-fundamentals": {
+      "source": "langchain-ai/langchain-skills",
+      "sourceType": "github",
+      "skillPath": "config/skills/langchain-fundamentals/SKILL.md",
+      "computedHash": "7f23a1fb935bb09221a7fb4e50d484abbe3ba93767de832b1904cf9101ff1fe2"
+    }
+  }
+}
