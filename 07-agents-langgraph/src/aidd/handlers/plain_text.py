@@ -112,6 +112,6 @@ async def plain_text(
         prompt_tokens=rag_result.prompt_tokens,
         completion_tokens=rag_result.completion_tokens,
         session_total_tokens=session_tokens_total,
-        success=True,
+        success=not rag_result.used_fallback,
     )
     await message.answer(stats_html, parse_mode=ParseMode.HTML)

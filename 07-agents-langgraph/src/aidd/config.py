@@ -183,6 +183,7 @@ class AppConfig:
     rerank_candidate_pool: int
     rerank_top_k: int
     ragas_llm_model: str
+    ragas_llm_max_completion_tokens: int
     ragas_embedding_provider: EmbeddingProvider
     ragas_embedding_model: str
     show_sources: bool
@@ -285,6 +286,12 @@ class AppConfig:
         show_sources = _parse_show_sources(os.environ.get("SHOW_SOURCES"))
 
         ragas_llm = (os.environ.get("RAGAS_LLM_MODEL") or "").strip() or llm_model
+        ragas_max_raw = (os.environ.get("RAGAS_LLM_MAX_COMPLETION_TOKENS") or "").strip()
+        ragas_llm_max_completion_tokens = (
+            _parse_llm_max_completion_tokens(ragas_max_raw)
+            if ragas_max_raw
+            else llm_max
+        )
         ragas_emb_prov = _parse_ragas_embedding_provider(
             os.environ.get("RAGAS_EMBEDDING_PROVIDER"), embedding_provider
         )
@@ -325,6 +332,7 @@ class AppConfig:
             rerank_candidate_pool=rerank_candidate_pool,
             rerank_top_k=rerank_top_k,
             ragas_llm_model=ragas_llm,
+            ragas_llm_max_completion_tokens=ragas_llm_max_completion_tokens,
             ragas_embedding_provider=ragas_emb_prov,
             ragas_embedding_model=ragas_emb_model,
             show_sources=show_sources,

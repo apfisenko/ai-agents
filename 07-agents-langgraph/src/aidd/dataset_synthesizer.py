@@ -28,10 +28,9 @@ from aidd.indexing import (
     default_data_dir,
     split_documents,
 )
+from aidd.langsmith_dataset_env import langsmith_dataset_json_filename, langsmith_dataset_name
 
 logger = logging.getLogger(__name__)
-
-DATASET_FILENAME: Final[str] = "06-rag-qa-dataset.json"
 SYNTHESIS_SYSTEM: Final[str] = (
     "Ты эксперт по созданию вопросно-ответных пар для оценки RAG.\n"
     "На основе текста создай ровно {num_questions} вопрос(а/ов) и короткий точный ответ "
@@ -53,7 +52,7 @@ def repo_root_containing_dataset_dir(start: Path) -> Path:
 
 def output_json_path(repo: Path | None = None) -> Path:
     root = repo or repo_root_containing_dataset_dir(Path.cwd().resolve())
-    return (root / "datasets" / DATASET_FILENAME).resolve()
+    return (root / "datasets" / langsmith_dataset_json_filename()).resolve()
 
 
 def _norm_question(q: str) -> str:
@@ -389,7 +388,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
         print(f"Файл датасета не найден: {path}", file=sys.stderr)
         return 1
 
-    name = (os.environ.get("LANGSMITH_DATASET_NAME") or "").strip() or "06-rag-qa-dataset"
+    name = langsmith_dataset_name()
     desc = (os.environ.get("LANGSMITH_DATASET_DESCRIPTION") or "").strip() or (
         "Q&A для оценки RAG (синтез по PDF + JSON), проект aidd"
     )
@@ -424,7 +423,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     parser = argparse.ArgumentParser(
-        description="Синтез datasets/06-rag-qa-dataset.json и выгрузка в LangSmith."
+        description=(
+            "Синтез JSON в datasets/ и выгрузка в LangSmith; имя набора и файла — LANGSMITH_DATASET "
+            f"(сейчас: «{langsmith_dataset_name()}» → datasets/{langsmith_dataset_json_filename()})."
+        )
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -440,7 +442,7 @@ def main(argv: list[str] | None = None) -> int:
         "-o",
         type=str,
         default=None,
-        help=f"Путь к JSON (по умолчанию datasets/{DATASET_FILENAME})",
+        help=f"Путь к JSON (по умолчанию datasets/{langsmith_dataset_json_filename()})",
     )
     p_syn.set_defaults(func=cmd_synthesize)
 
@@ -450,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
         "-i",
         type=str,
         default=None,
-        help=f"Путь к JSON (по умолчанию datasets/{DATASET_FILENAME})",
+        help=f"Путь к JSON (по умолчанию datasets/{langsmith_dataset_json_filename()})",
     )
     p_up.set_defaults(func=cmd_upload)
 

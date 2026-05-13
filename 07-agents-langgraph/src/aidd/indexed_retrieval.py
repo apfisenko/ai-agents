@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import aidd.hf_hub_env  # noqa: F401 — до импортов с HF Hub
+
 import asyncio
 import logging
 from typing import Any, Sequence

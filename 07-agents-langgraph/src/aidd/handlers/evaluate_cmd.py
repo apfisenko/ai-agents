@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from aidd.evaluation import EvaluationError, format_summary_for_telegram, run_ragas_evaluation_with_feedback
-from aidd.rag_chain import RagChainRunner
+from aidd.bank_agent import BankAgentRunner
+from aidd.config import AppConfig
+from aidd.evaluation import EvaluationError, evaluate_dataset, format_summary_for_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,14 @@ def _split_telegram(text: str) -> list[str]:
 
 
 @router.message(Command("evaluate_dataset"))
-async def cmd_evaluate_dataset(message: Message, rag_runner: RagChainRunner) -> None:
+async def cmd_evaluate_dataset(
+    message: Message,
+    bank_runner: BankAgentRunner,
+    app_config: AppConfig,
+) -> None:
     await message.answer("Запускаю оценку на датасете LangSmith (RAGAS). Это может занять несколько минут…")
     try:
-        summary = await asyncio.to_thread(run_ragas_evaluation_with_feedback, rag_runner)
+        summary = await evaluate_dataset(bank_runner, app_config)
     except EvaluationError as e:
         logger.warning("Evaluate dataset: %s", e)
         await message.answer(str(e))

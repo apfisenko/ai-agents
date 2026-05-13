@@ -7,6 +7,10 @@ import re
 import sys
 
 from dotenv import load_dotenv
+
+load_dotenv()
+import aidd.hf_hub_env  # noqa: F401 — после .env, до импортов с HF Hub
+
 from aiogram.exceptions import TelegramNetworkError
 
 from aidd.config import AppConfig
@@ -76,7 +80,6 @@ def _rewrite_loopback_proxy_for_docker() -> None:
 
 
 def main() -> None:
-    load_dotenv()
     _normalize_proxy_env_urls()
     _rewrite_loopback_proxy_for_docker()
     try:

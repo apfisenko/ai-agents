@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 import os
+import uuid
 from dataclasses import dataclass
 from typing import Any, Final, Iterator
 
 from datasets import Dataset as HFDataset
-from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langsmith import Client
 
@@ -27,31 +26,12 @@ from ragas.metrics import (
 )
 from ragas.run_config import RunConfig
 
+from aidd.bank_agent import BankAgentRunner
+from aidd.config import AppConfig
 from aidd.indexing import make_embeddings, make_huggingface_embeddings
-from aidd.rag_chain import RagChainRunner
+from aidd.langsmith_dataset_env import langsmith_dataset_name
 
 logger = logging.getLogger(__name__)
-
-
-def _run_coro_sync(coro):
-    """Выполнить корутину в новом цикле (обход asyncio.run после nest_asyncio и прочих патчей)."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        try:
-            pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-            for task in pending:
-                task.cancel()
-            if pending:
-                loop.run_until_complete(
-                    asyncio.gather(*pending, return_exceptions=True)
-                )
-        except Exception:
-            pass
-        loop.close()
-        asyncio.set_event_loop(None)
 
 
 METRIC_NAMES: Final[tuple[str, ...]] = (
@@ -106,13 +86,6 @@ def _langsmith_api_key() -> str:
     return (os.environ.get("LANGSMITH_API_KEY") or os.environ.get("LANGCHAIN_API_KEY") or "").strip()
 
 
-def _dataset_name() -> str:
-    return (
-        (os.environ.get("LANGSMITH_DATASET_NAME") or "").strip()
-        or "06-rag-qa-dataset"
-    )
-
-
 def _parse_ragas_show_progress() -> bool:
     """Полоса RAGAS в IDE/логах часто не обновляется; tqdm только по явному env."""
     raw = (os.environ.get("RAGAS_SHOW_PROGRESS") or "").strip().lower()
@@ -137,30 +110,34 @@ def _examples_for_eval(client: Client, dataset_name: str, limit: int | None) -> 
         yield ex
 
 
-def _make_rag_target(rag_runner: RagChainRunner):
-    def target(inputs: dict[str, Any], **_: Any) -> dict[str, Any]:
+def _make_bank_agent_eval_target(bank_runner: BankAgentRunner):
+    """Async target для ``Client.aevaluate``: уникальный ``thread_id`` на каждый пример (MemorySaver)."""
+
+    async def target(inputs: dict[str, Any], **_: Any) -> dict[str, Any]:
         q = str(inputs.get("question") or "").strip()
         if not q:
             return {"answer": "", "documents": []}
-
-        async def _arun() -> dict[str, Any]:
-            res = await rag_runner.ainvoke([HumanMessage(content=q)])
-            docs: list[dict[str, Any]] = []
-            for d in res.documents:
-                docs.append(
-                    {
-                        "page_content": d.page_content,
-                        "metadata": dict(d.metadata or {}),
-                    }
-                )
-            return {"answer": res.text, "documents": docs}
-
-        return _run_coro_sync(_arun())
+        eval_tid = f"aidd-eval-{uuid.uuid4()}"
+        res = await bank_runner.ainvoke_turn(
+            chat_id=0,
+            user_text=q,
+            thread_id=eval_tid,
+        )
+        docs: list[dict[str, Any]] = []
+        for d in res.documents:
+            docs.append(
+                {
+                    "page_content": d.page_content,
+                    "metadata": dict(d.metadata or {}),
+                }
+            )
+        return {"answer": res.text, "documents": docs}
 
     return target
 
 
 def _documents_to_contexts(documents: Any) -> list[str]:
+    """RAGAS contexts: только ``page_content`` чанков из ``rag_search`` (BankAgentTurnResult)."""
     if not documents:
         return []
     out: list[str] = []
@@ -199,15 +176,18 @@ def _build_ragas_metrics(
     ]
 
 
-def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> EvaluationRunSummary:
-    """Синхронный прогон: worker-thread (RAG через отдельный event loop — см. `_run_coro_sync`)."""
+async def evaluate_dataset(
+    bank_runner: BankAgentRunner,
+    app_config: AppConfig,
+) -> EvaluationRunSummary:
+    """Полностью async: ``await client.aevaluate``, затем ``async for`` по результатам (vision §10)."""
     ls_key = _langsmith_api_key()
     if not ls_key:
         raise EvaluationError(
             "Не задан LANGSMITH_API_KEY (или LANGCHAIN_API_KEY). Нужен для эксперимента и feedback."
         )
 
-    cfg = rag_runner.app_config
+    cfg = app_config
     base = cfg.open_base_url.rstrip("/")
     router_key = cfg.open_api_key
     ragas_llm_id = cfg.ragas_llm_model.strip()
@@ -219,7 +199,7 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
         api_key=router_key,
         base_url=base,
         temperature=0.0,
-        max_tokens=2048,
+        max_tokens=cfg.ragas_llm_max_completion_tokens,
     )
     if ragas_emb_prov == "huggingface":
         lc_embeddings = make_huggingface_embeddings(embedding_model=emb_raw)
@@ -242,36 +222,38 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
     )
 
     client = Client()
-    ds_name = _dataset_name()
+    ds_name = langsmith_dataset_name()
     limit = _parse_eval_limit()
     examples = list(_examples_for_eval(client, ds_name, limit))
     if not examples:
         raise EvaluationError(
             f"Нет примеров в датасете LangSmith «{ds_name}». "
-            f"Загрузите набор командой dataset-upload или укажите LANGSMITH_DATASET_NAME."
+            f"Загрузите набор командой dataset-upload или задайте LANGSMITH_DATASET."
         )
 
     logger.info(
-        "RAGAS eval: LangSmith dataset=%s, примеров=%s, ragas_llm=%s "
-        "ragas_emb_provider=%s ragas_emb_model=%s",
+        "RAGAS eval (bank agent): LangSmith dataset=%s, примеров=%s, ragas_llm=%s "
+        "ragas_max_completion_tokens=%s ragas_emb_provider=%s ragas_emb_model=%s",
         ds_name,
         len(examples),
         ragas_llm_id,
+        cfg.ragas_llm_max_completion_tokens,
         ragas_emb_prov,
         emb_raw,
     )
 
-    target_fn = _make_rag_target(rag_runner)
+    target_fn = _make_bank_agent_eval_target(bank_runner)
 
-    ls_results = client.evaluate(
+    experiment_results = await client.aevaluate(
         target_fn,
         data=iter(examples),
         evaluators=[],
         experiment_prefix="aidd-ragas",
         metadata={
-            "pipeline": "aidd.telegram_rag",
+            "pipeline": "aidd.telegram_bank_agent",
             "dataset": ds_name,
             "ragas_llm": ragas_llm_id,
+            "ragas_llm_max_completion_tokens": str(cfg.ragas_llm_max_completion_tokens),
             "ragas_embedding_provider": ragas_emb_prov,
             "ragas_embedding_model": emb_raw,
         },
@@ -280,7 +262,7 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
     )
 
     rows: list[dict[str, Any]] = []
-    for item in ls_results:
+    async for item in experiment_results:
         run = item["run"]
         example = item["example"]
         question = ""
@@ -305,7 +287,7 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
             }
         )
 
-    ls_results.wait()
+    await experiment_results.wait()
 
     if not rows:
         raise EvaluationError("Эксперимент LangSmith не вернул строк — прервать нельзя.")
@@ -381,14 +363,14 @@ def run_ragas_evaluation_with_feedback(rag_runner: RagChainRunner) -> Evaluation
         if vals:
             means[name] = sum(vals) / len(vals)
 
-    exp_name = ls_results.experiment_name
-    url = ls_results.comparison_url
+    exp_name = experiment_results.experiment_name
+    comparison_url = await experiment_results.get_comparison_url()
 
     return EvaluationRunSummary(
         num_examples=len(rows),
         means=means,
         experiment_name=exp_name,
-        comparison_url=url,
+        comparison_url=comparison_url,
         feedback_rows=feedback_n,
     )
 
