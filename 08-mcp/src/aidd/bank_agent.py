@@ -35,13 +35,29 @@ FALLBACK_ASSISTANT_REPLY = (
 _MCP_SERVER_NAME = "bank"
 
 
+def _mcp_tool_names_frozen(mcp_tools: Sequence[Any]) -> frozenset[str]:
+    """Имена инструментов с MCP-сервера, как сообщает клиент после ``get_tools()``."""
+    names: set[str] = set()
+    for t in mcp_tools:
+        raw = getattr(t, "name", None)
+        if isinstance(raw, str):
+            s = raw.strip()
+            if s:
+                names.add(s)
+    return frozenset(names)
+
+
 async def create_bank_agent(
     config: AppConfig,
     indexed: IndexedRetriever,
     *,
     checkpointer: InMemorySaver | None = None,
-) -> tuple[Any, InMemorySaver]:
-    """Собирает граф агента и in-memory checkpointer. MCP-инструменты — при успешном ``get_tools()``."""
+) -> tuple[Any, InMemorySaver, frozenset[str]]:
+    """Собирает граф агента и in-memory checkpointer. MCP-инструменты — при успешном ``get_tools()``.
+
+    Имена MCP-инструментов для логов хода диалога — из того же списка, что вернул ``get_tools()``;
+    если MCP недоступен или отключён — пустое ``frozenset``.
+    """
     llm = ChatOpenAI(
         model=config.llm_model,
         api_key=config.open_api_key,
@@ -52,6 +68,7 @@ async def create_bank_agent(
     rag_tool = make_rag_search_tool(indexed)
     currency_tool = make_convert_currency_tool()
     tools: list[Any] = [rag_tool, currency_tool]
+    mcp_tool_names: frozenset[str] = frozenset()
 
     if config.mcp_bank_enabled:
         try:
@@ -67,10 +84,13 @@ async def create_bank_agent(
             )
             mcp_tools = await mcp_client.get_tools()
             tools.extend(mcp_tools)
+            mcp_tool_names = _mcp_tool_names_frozen(mcp_tools)
+            mcp_names_ordered = sorted(mcp_tool_names)
             logger.info(
-                "MCP bank: подключено инструментов %d (%s)",
+                "MCP bank: подключено инструментов %d (%s): %s",
                 len(mcp_tools),
                 config.mcp_bank_streamable_http_url,
+                ", ".join(mcp_names_ordered) if mcp_names_ordered else "(нет имён)",
             )
         except Exception as exc:
             logger.warning(
@@ -89,7 +109,7 @@ async def create_bank_agent(
         system_prompt=config.system_prompt_text,
         checkpointer=saver,
     )
-    return agent_graph, saver
+    return agent_graph, saver, mcp_tool_names
 
 
 async def initialize_agent(
@@ -99,10 +119,10 @@ async def initialize_agent(
     checkpointer: InMemorySaver | None = None,
 ) -> BankAgentRunner:
     """Async-обёртка над ``create_bank_agent`` → ``BankAgentRunner`` (итерация 23)."""
-    graph, saver = await create_bank_agent(
+    graph, saver, mcp_tool_names = await create_bank_agent(
         config, indexed, checkpointer=checkpointer
     )
-    return BankAgentRunner(graph, saver)
+    return BankAgentRunner(graph, saver, mcp_tool_names=mcp_tool_names)
 
 
 def wipe_in_memory_thread(checkpointer: InMemorySaver, thread_id: str) -> None:
@@ -143,17 +163,52 @@ def _flatten_ai_content(msg: AIMessage) -> str:
     return str(content or "").strip()
 
 
+def _tool_call_name(tc: Any) -> str | None:
+    if isinstance(tc, dict):
+        raw = tc.get("name")
+        return str(raw) if raw is not None and str(raw) != "" else None
+    raw = getattr(tc, "name", None)
+    return str(raw) if raw is not None and str(raw) != "" else None
+
+
 def _summarize_message_tail(m: BaseMessage) -> str:
     """Краткое описание сообщения для лога без содержимого и секретов."""
     cn = m.__class__.__name__
     if isinstance(m, AIMessage):
         tc = getattr(m, "tool_calls", None) or []
-        names = [str(t.get("name", "?")) for t in tc if isinstance(t, dict)]
+        names = [_tool_call_name(t) or "?" for t in tc]
         has_text = bool(_flatten_ai_content(m))
         return f"{cn}(tools={names},has_text={has_text})"
     if isinstance(m, ToolMessage):
         return f"{cn}(name={m.name or '?'})"
     return cn
+
+
+def _slice_after_last_human(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
+    msgs = list(messages)
+    last = -1
+    for i, m in enumerate(msgs):
+        if isinstance(m, HumanMessage):
+            last = i
+    return msgs[last + 1 :] if last >= 0 else []
+
+
+def log_mcp_bank_tool_calls(
+    messages: Sequence[BaseMessage], mcp_tool_names: frozenset[str]
+) -> None:
+    """Явное логирование вызовов MCP по именам из ``get_tools()`` при старте бота."""
+    if not mcp_tool_names:
+        return
+    for m in _slice_after_last_human(messages):
+        if isinstance(m, AIMessage):
+            for tc in getattr(m, "tool_calls", None) or []:
+                name = _tool_call_name(tc)
+                if name and name in mcp_tool_names:
+                    logger.info("MCP bank: запрошен инструмент name=%s", name)
+        elif isinstance(m, ToolMessage):
+            name = (m.name or "").strip()
+            if name in mcp_tool_names:
+                logger.info("MCP bank: получен результат инструмента name=%s", name)
 
 
 def log_bank_agent_stream_step(step_idx: int, messages: Sequence[BaseMessage]) -> None:
@@ -194,9 +249,16 @@ class BankAgentTurnResult:
 
 
 class BankAgentRunner:
-    def __init__(self, agent_graph: Any, checkpointer: InMemorySaver) -> None:
+    def __init__(
+        self,
+        agent_graph: Any,
+        checkpointer: InMemorySaver,
+        *,
+        mcp_tool_names: frozenset[str] | None = None,
+    ) -> None:
         self._agent = agent_graph
         self._checkpointer = checkpointer
+        self._mcp_tool_names: frozenset[str] = mcp_tool_names or frozenset()
 
     def reset_thread(self, chat_id: int) -> None:
         wipe_in_memory_thread(self._checkpointer, str(chat_id))
@@ -251,6 +313,7 @@ class BankAgentRunner:
         msgs_final = last_out.get("messages") or []
         if not isinstance(msgs_final, list):
             msgs_final = list(msgs_final)
+        log_mcp_bank_tool_calls(msgs_final, self._mcp_tool_names)
         text = _final_turn_assistant_text(msgs_final)
         docs_list = documents_from_rag_tool_turn(msgs_final)
         pin, pout, ptot = _aggregate_llm_usage(usage_cb)

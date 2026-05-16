@@ -326,16 +326,17 @@
 
 ## Спринт 6 — MCP-сервер банка и интеграция в агента
 
-Цели — [vision.md](vision.md) (§1, §5–6, §8, §12, сводка): подпроект **`mcp/mcp-bank-agent`** (FastMCP, **streamable HTTP**, порт **8000**), данные **`bank_products.json`**, инструменты **`search_products`** и **`currency_converter_mcp`** (курсы через **cbr-xml-daily.ru**, маршрут **через RUB**); в боте — **`langchain-mcp-adapters`**, **async** **`create_bank_agent`** / **`initialize_agent`**, **`await mcp_client.get_tools()`**, **graceful degradation**, обновление **`prompts/system.txt`** ( **`rag_search`** vs **`search_products`**; **`convert_currency`** vs **`currency_converter_mcp`**). Референс: **`data/agent-mcp.ipynb`**. Запуск: **`make run-mcp-bank`**, затем **`make run`**; дублирование в **`make.ps1`**.
+Цели — [vision.md](vision.md) (§1, §5–6, §8, §12, сводка): подпроект **`mcp/mcp-bank-agent`** (FastMCP, **streamable HTTP**, порт **8000**), данные **`bank_products.json`**, инструменты **`search_products`**, **`currency_converter_mcp`** и **`loan_payment_mcp`**; в боте — **`langchain-mcp-adapters`**, **async** **`create_bank_agent`** / **`initialize_agent`**, **`await mcp_client.get_tools()`**, **graceful degradation**, обновление **`prompts/system.txt`** ( **`rag_search`** vs **`search_products`**; **`convert_currency`** vs **`currency_converter_mcp`**; когда **`loan_payment_mcp`**). Референс: **`data/agent-mcp.ipynb`**. Запуск: **`make run-mcp-bank`**, затем **`make run`**; дублирование в **`make.ps1`**.
 
 ### Прогресс
 
 | № | Итерация | Статус |
 |---|----------|--------|
-| 21 | Подпроект **`mcp-bank-agent`**: **`bank_products.json`**, **`search_products`**, streamable HTTP | 🚧 In Progress |
-| 22 | Инструмент **`currency_converter_mcp`** (ЦБ РФ, конвертация любой→любой через RUB) | 🚧 In Progress |
-| 23 | Агент: MCP-клиент, async-инициализация, graceful degradation, системный промпт | 🚧 In Progress |
-| 24 | Корневой **`pyproject`**, **`Makefile`** / **`make.ps1`**, **`run-mcp-bank`**, порядок запуска | 🚧 In Progress |
+| 21 | Подпроект **`mcp-bank-agent`**: **`bank_products.json`**, **`search_products`**, streamable HTTP | ✅ Done |
+| 22 | Инструмент **`currency_converter_mcp`** (ЦБ РФ, конвертация любой→любой через RUB) | ✅ Done |
+| 23 | Агент: MCP-клиент, async-инициализация, graceful degradation, системный промпт | ✅ Done |
+| 24 | Корневой **`pyproject`**, **`Makefile`** / **`make.ps1`**, **`run-mcp-bank`**, порядок запуска | ✅ Done |
+| **25** | **MCP: инструмент `loan_payment_mcp` (аннуитет), системный промпт** | 🚧 In Progress |
 
 ---
 
@@ -385,3 +386,15 @@
 - [x] **`Makefile`** и **`make.ps1`** (`run-mcp-bank`, `check-mcp-bank`)
 - [x] **`pyproject.toml`** корня: **`langchain-mcp-adapters`**
 - [x] **`.env.example`** и **`aidd.mcp_health`** / **`/mcp_status`**
+
+---
+
+### Итерация 25 — MCP `loan_payment_mcp` и промпт агента
+
+**Цель:** в **`mcp/mcp-bank-agent`** добавить инструмент **`loan_payment_mcp(principal, annual_rate_percent, term_months)`** — ориентировочный **аннуитетный** месячный платёж, сумма возврата и переплата по упрощённой формуле (без комиссий и страховок); ответ агенту — JSON (**`ok`** / поля платежей / **`note`** с дисклеймером). В **`prompts/system.txt`** — правила **когда** вызывать при вопросах про «сколько платить в месяц», платёж по кредиту при известной сумме, ставке и сроке (и когда **не** вызывать: нет данных, нужен именно текст договора); **три** few-shot-примера вызова MCP.
+
+**Проверка:** при запущенном MCP инструмент виден клиентом; типовые значения (например 300000 ₽, 12%/год, 24 мес.) дают правдоподобный **`monthly_payment`**; ставка **0** даёт `principal / term_months`. Агент в промпте сориентирован на вызов по сценарию «посчитай платёж». **idea.md** / **vision.md** согласованы со списком MCP-инструментов (**`loan_payment_mcp`** не участвует в **`SHOW_SOURCES`** / RAGAS).
+
+- [x] **`mcp_bank_agent`**: модуль расчёта и **`@mcp.tool` `loan_payment_mcp`** в **`server.py`**
+- [x] **`prompts/system.txt`**: правила и три примера **`loan_payment_mcp`**
+- [x] Выравнивание **vision.md** / **idea.md**

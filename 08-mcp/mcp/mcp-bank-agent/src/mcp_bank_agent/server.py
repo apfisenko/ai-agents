@@ -10,6 +10,7 @@ from fastmcp import FastMCP
 from mcp_bank_agent.catalog import load_catalog
 from mcp_bank_agent.catalog import search_products as filter_products
 from mcp_bank_agent.cbr_convert import convert_via_rub
+from mcp_bank_agent.loan_calc import annuity_monthly_payment
 
 logging.basicConfig(
     level=os.environ.get("MCP_BANK_LOG_LEVEL", "INFO"),
@@ -24,7 +25,8 @@ mcp = FastMCP(
     instructions=(
         "Инструменты банковского ассистента: search_products — карточки продуктов из каталога; "
         "currency_converter_mcp — пересчёт валют по курсам ЦБ РФ (JSON cbr-xml-daily.ru), "
-        "любая ISO-валюта в любую через RUB."
+        "любая ISO-валюта в любую через RUB; loan_payment_mcp — ориентировочный аннуитетный "
+        "платёж и переплата по сумме, ставке (% годовых) и сроку в месяцах."
     ),
 )
 
@@ -85,6 +87,50 @@ def _round_conv_payload(payload: dict) -> dict:
     if ir is not None and isinstance(ir, (int, float)):
         out["intermediate_rub"] = round(float(ir), 10)
     return out
+
+
+@mcp.tool
+def loan_payment_mcp(
+    principal: float,
+    annual_rate_percent: float,
+    term_months: int,
+) -> str:
+    """Ориентировочный расчёт платежа по кредиту: аннуитет (равный ежемесячный платёж).
+
+    principal — сумма кредита в денежных единицах (та же валюта, что имеется в виду в вопросе;
+    без конвертации). annual_rate_percent — номинальная годовая процентная ставка в процентах
+    (например 12.5). term_months — срок в месяцах.
+
+    Это упрощённая математическая модель без комиссий, страховок и графика досрочного погашения;
+    не является офертой и условиями договора банка.
+
+    Возвращает JSON: ok, monthly_payment, total_to_pay, overpayment_over_principal и входные поля;
+    при ошибке ok=false, error.
+    """
+    try:
+        mp, total, over = annuity_monthly_payment(
+            float(principal),
+            float(annual_rate_percent),
+            int(term_months),
+        )
+        payload = {
+            "ok": True,
+            "repayment_type": "annuity",
+            "principal": round(float(principal), 2),
+            "annual_rate_percent": round(float(annual_rate_percent), 6),
+            "term_months": int(term_months),
+            "monthly_payment": round(mp, 2),
+            "total_to_pay": round(total, 2),
+            "overpayment_over_principal": round(over, 2),
+            "note": (
+                "Упрощённый расчёт аннуитетного платежа; реальная переплата в банке может отличаться "
+                "(комиссии, страховки, округления, акции)."
+            ),
+        }
+        return json.dumps(payload, ensure_ascii=False)
+    except (OverflowError, ValueError, ArithmeticError, TypeError) as e:
+        err = {"ok": False, "error": str(e)}
+        return json.dumps(err, ensure_ascii=False)
 
 
 @mcp.tool
