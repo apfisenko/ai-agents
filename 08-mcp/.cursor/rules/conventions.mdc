@@ -1,0 +1,37 @@
+---
+description:
+alwaysApply: true
+---
+
+# Conventions
+
+**Продуктовый замысел** — [docs/idea.md](docs/idea.md). **Нормативная спецификация** — [docs/vision.md](docs/vision.md): агент, **`rag_search`**, локальный **`convert_currency`**, опциональные MCP-инструменты (**`search_products`**, **`currency_converter_mcp`**), retrieval, конфигурация, оценка, команды бота.
+
+## Дисциплина агента
+
+- Не дублировать в этом файле перечни переменных окружения, таблицы режимов retrieval, состав метрик RAGAS и контракт JSON инструмента — всё в vision и `.env.example`.
+- Не расширять scope и не менять архитектуру вразрез с vision; новая возможность — сначала правка vision, затем код.
+- Соблюдать в vision разделы про цель и границы, референсы (в т.ч. **`data/agent-mcp.ipynb`**), поток диалога, **MCP**, **`rag_search`**, конфигурацию, мониторинг и RAGAS.
+
+## Якоря (кратко)
+
+- Python **3.11**, **uv**; Telegram: **aiogram 3.x**, async, **polling**.
+- Оркестрация ответа: **LangChain 1.x**, **`create_agent`**, **`MemorySaver`**, **ReAct**; RAG по проиндексированным файлам — только через **`rag_search`** (подробности и контракт — vision). Динамика продуктов и курсы ЦБ при доступном сервере — MCP-инструменты из vision.
+- Инициализация агента с MCP: **`async`** **`create_bank_agent`** / **`initialize_agent`**, **`await mcp_client.get_tools()`**; при ошибке подключения — **warning** и работа без MCP-инструментов (vision).
+- Retrieval: режим **`RAG_RETRIEVAL_MODE`** (**semantic**, **hybrid**, **hybrid_rerank**), **`InMemoryVectorStore`**, индексация при старте и **`/index`**, **`/index_status`** — vision.
+- LLM-провайдер — **OpenRouter**: переменные и имена моделей — раздел конфигурации в vision.
+- MCP-сервер **`mcp-bank-agent`**: подпроект **`mcp/mcp-bank-agent`**, **streamable HTTP** (порт **8000** по умолчанию); локальный запуск **`make run-mcp-bank`** до **`make run`** для полного набора инструментов — vision §12.
+
+## Принципы кода
+
+- **KISS**, **YAGNI**; **ООП** по делу; **один класс — один файл**, где это уже принято в проекте.
+- Модули-ориентиры: **`indexing.py`**, сборка retrieval, **`evaluation.py`**, **`dataset_synthesizer.py`**, модуль агента (**async**, MCP-клиент) и модуль **`rag_search`** — по структуре в vision (имена могут быть уточнены в коде).
+
+## Конфигурация и безопасность
+
+- Секреты только в env; в git — **`.env.example`**. Обязательные переменные — явная ошибка при старте (перечень в vision и `.env.example`).
+- Логи: **`logging`**, без токенов, ключей и лишних дампов.
+
+## Прочее
+
+- Docker / Make / PowerShell не расширять сверх целей vision (включая цели **`run-mcp-bank`** и дубли в **`make.ps1`**, если они в vision §12).

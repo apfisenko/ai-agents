@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "build-mcp-server": {
+      "source": "anthropics/claude-plugins-official",
+      "sourceType": "github",
+      "skillPath": "plugins/mcp-server-dev/skills/build-mcp-server/SKILL.md",
+      "computedHash": "9bf9f8ce713a3fc26f4bb3af09321626638b91f379bb3a15d5e809cc771e8a12"
+    },
+    "langchain-fundamentals": {
+      "source": "langchain-ai/langchain-skills",
+      "sourceType": "github",
+      "skillPath": "config/skills/langchain-fundamentals/SKILL.md",
+      "computedHash": "7f23a1fb935bb09221a7fb4e50d484abbe3ba93767de832b1904cf9101ff1fe2"
+    }
+  }
+}
