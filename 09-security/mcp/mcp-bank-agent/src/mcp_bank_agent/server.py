@@ -11,6 +11,7 @@ from mcp_bank_agent.catalog import load_catalog
 from mcp_bank_agent.catalog import search_products as filter_products
 from mcp_bank_agent.cbr_convert import convert_via_rub
 from mcp_bank_agent.credit_card_mock import issue_mock_credit_card
+from mcp_bank_agent.deposit_mock import issue_mock_deposit
 from mcp_bank_agent.loan_calc import annuity_monthly_payment
 
 logging.basicConfig(
@@ -28,7 +29,8 @@ mcp = FastMCP(
         "currency_converter_mcp — пересчёт валют по курсам ЦБ РФ (JSON cbr-xml-daily.ru), "
         "любая ISO-валюта в любую через RUB; loan_payment_mcp — ориентировочный аннуитетный "
         "платёж и переплата по сумме, ставке (% годовых) и сроку в месяцах; open_credit_card — "
-        "мок-эмитация открытия кредитной карты (демо, без реальных операций в банке)."
+        "мок-эмитация открытия кредитной карты (демо, без реальных операций в банке); open_deposit — "
+        "мок-эмитация открытия вклада по сумме, сроку в месяцах и годовой ставке (%; демо)."
     ),
 )
 
@@ -158,6 +160,47 @@ def open_credit_card(application_note: str | None = None) -> str:
     except (OverflowError, ValueError, TypeError, KeyError) as e:
         err = {"ok": False, "error": str(e)}
         log.warning("open_credit_card mock failed: %s", e)
+        return json.dumps(err, ensure_ascii=False)
+
+
+@mcp.tool
+def open_deposit(
+    amount_rub: float,
+    term_months: int,
+    annual_rate_percent: float,
+    application_note: str | None = None,
+) -> str:
+    """Эмуляция (мок) открытия вклада для демонстрации сценария в ассистенте.
+
+    Не вызывает реальных банковских систем и не создаёт юридических обязательств.
+    amount_rub — сумма вклада; term_months — срок в месяцах; annual_rate_percent —
+    номинальная годовая ставка в процентах (упрощённая модель без капитализации и налогов).
+
+    Возвращает JSON: при успехе ok=true, operation_id, поля параметров, currency,
+    estimated_interest_at_maturity_rub (ориентир простых процентов на срок), note;
+    при ошибке ok=false, error.
+    """
+    try:
+        if float(amount_rub) <= 0:
+            raise ValueError("amount_rub must be positive")
+        if int(term_months) <= 0:
+            raise ValueError("term_months must be positive")
+        payload = issue_mock_deposit(
+            float(amount_rub),
+            int(term_months),
+            float(annual_rate_percent),
+            application_note,
+        )
+        log.info(
+            "open_deposit mock issued operation_id=%s amount_rub=%s term_months=%s",
+            payload["operation_id"],
+            payload["amount_rub"],
+            payload["term_months"],
+        )
+        return json.dumps(payload, ensure_ascii=False)
+    except (OverflowError, ValueError, TypeError, KeyError) as e:
+        err = {"ok": False, "error": str(e)}
+        log.warning("open_deposit mock failed: %s", e)
         return json.dumps(err, ensure_ascii=False)
 
 

@@ -1,4 +1,4 @@
-"""Inline HITL: Accept / Reject для подтверждения операции перед вызовом open_credit_card."""
+"""Inline HITL: Accept / Reject для подтверждения перед вызовом MCP open_credit_card и open_deposit."""
 
 from __future__ import annotations
 
@@ -32,14 +32,14 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-_HITL_CB_APPROVE = "hitl_oc:approve"
-_HITL_CB_REJECT = "hitl_oc:reject"
+_HITL_CB_APPROVE = "hitl_bank:approve"
+_HITL_CB_REJECT = "hitl_bank:reject"
 
 _LLM_UNAVAILABLE = "Сервис временно недоступен. Попробуйте позже."
 
 
-def hitl_open_credit_card_keyboard() -> InlineKeyboardMarkup:
-    """Inline-кнопки подтверждения операции открытия карты (vision §8)."""
+def hitl_bank_operation_keyboard() -> InlineKeyboardMarkup:
+    """Inline-кнопки подтверждения демо-операции MCP (vision §8)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -59,7 +59,7 @@ def build_hitl_resume_command(approve: bool) -> Command:
             "decisions": [
                 {
                     "type": "reject",
-                    "message": "Пользователь отклонил операцию открытия кредитной карты.",
+                    "message": "Пользователь отклонил демо-операцию (human-in-the-loop).",
                 }
             ]
         }
@@ -67,7 +67,7 @@ def build_hitl_resume_command(approve: bool) -> Command:
 
 
 @router.callback_query(F.data.in_({_HITL_CB_APPROVE, _HITL_CB_REJECT}))
-async def hitl_open_credit_card_callback(
+async def hitl_bank_operation_callback(
     query: CallbackQuery,
     conversation_store: ConversationStore,
     bank_runner: BankAgentRunner,
@@ -97,7 +97,7 @@ async def hitl_open_credit_card_callback(
 
     if not await agent_invocation_rate_limiter.allow_agent_turn(chat_id):
         logger.warning(
-            "hitl_open_credit_card_callback: agent invocation rate limit exceeded chat_id=%s",
+            "hitl_bank_operation_callback: agent invocation rate limit exceeded chat_id=%s",
             chat_id,
         )
         await query.answer()
@@ -140,7 +140,7 @@ async def hitl_open_credit_card_callback(
             )
             await query.message.answer(
                 prompt,
-                reply_markup=hitl_open_credit_card_keyboard(),
+                reply_markup=hitl_bank_operation_keyboard(),
             )
             return
 

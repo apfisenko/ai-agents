@@ -401,7 +401,7 @@
 
 ---
 
-## Спринт 7 — Безопасность: `open_credit_card`, HITL, PII, rate limiting
+## Спринт 7 — Безопасность: чувствительные MCP-операции (`open_credit_card`, `open_deposit`), HITL, PII, rate limiting
 
 Цели и ограничения — [vision.md](vision.md) (§8, §12, сводка). Референс потока с interrupt: **`data/agent-guards-demo.ipynb`** (паттерн **`run_turn_agent`**, **`HumanInTheLoopMiddleware`**). Принципы: **KISS**, **YAGNI** — только **Accept** / **Reject** для HITL, без **edit**.
 
@@ -415,6 +415,7 @@
 | 29 | PII-маскирование исходящих сообщений и политика логов | ✅ Done |
 | 30 | Rate limiting по **`chat_id`**, **`.env.example`**, **`make.sh`** | ✅ Done |
 | 31 | Лимит **обращений к агенту** (`ainvoke_turn`) на **`chat_id`** за окно времени | ✅ Done |
+| 32 | MCP **`open_deposit`**, HITL и Telegram (общие Accept/Reject), промпт, vision/idea | 🚧 In Progress |
 
 ---
 
@@ -484,3 +485,18 @@
 - [x] Конфиг и модуль лимита (общая логика окна — **`sliding_window_chat_limiter`**)
 - [x] Встраивание перед **`ainvoke_turn`** в **`plain_text`** и **`hitl_callback`**
 - [x] **vision.md**, **`.env.example`**, **ReadMe**
+
+---
+
+### Итерация 32 — MCP `open_deposit`, HITL и промпт
+
+**Цель:** в **`mcp/mcp-bank-agent`** добавить **`open_deposit(amount_rub, term_months, annual_rate_percent, application_note?)`** — мок открытия вклада с упрощённой оценкой **`estimated_interest_at_maturity_rub`** (простые проценты на срок); в агенте **`HumanInTheLoopMiddleware`** для **`open_deposit`** так же, как для **`open_credit_card`** (инструмент попадает в **`interrupt_on`** только если есть в **`get_tools()`**). В Telegram — те же inline **Accept** / **Reject**, **`Command(resume=…)`**, **`edit_reply_markup(None)`** после нажатия. В **`prompts/system.txt`** — правила, когда вызывать/не вызывать и примеры; выравнивание **vision.md** и **idea.md**.
+
+**Проверка:** при запущенном MCP инструмент виден клиенту; сценарий «открыть вклад» останавливается на HITL с деталями в сообщении; Accept выполняет вызов MCP и даёт ответ; Reject отменяет без MCP; клавиатура снимается. Имя инструмента в MCP и в коде — **`open_deposit`** (одно подчёркивание).
+
+- [x] **`mcp_bank_agent`**: **`deposit_mock.py`**, **`@mcp.tool` `open_deposit`** в **`server.py`**
+- [x] **`bank_agent.py`**: **`interrupt_on`** для **`open_credit_card`** и **`open_deposit`**
+- [x] **`hitl_callback`**, **`plain_text`**: общая клавиатура **`hitl_bank_operation_keyboard`**, callback **`hitl_bank_operation_callback`**
+- [x] **`prompts/system.txt`**, **vision.md**, **idea.md**, **mcp-bank-agent/ReadMe.md**
+
+**Статус закрытия итерации:** после вашей проверки в Telegram/MCP — подтвердите; затем в таблице прогресса можно выставить **Done**.

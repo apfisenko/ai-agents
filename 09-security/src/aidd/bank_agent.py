@@ -29,8 +29,23 @@ from aidd.tools.rag_search_tool import make_rag_search_tool
 
 logger = logging.getLogger(__name__)
 
-# MCP-инструмент: human-in-the-loop только для него (vision §12).
-_OPEN_CREDIT_CARD_TOOL_NAME = "open_credit_card"
+# MCP-инструменты с human-in-the-loop (vision §12): только approve/reject.
+_HITL_INTERRUPT_TOOL_SPECS: dict[str, dict[str, Any]] = {
+    "open_credit_card": {
+        "allowed_decisions": ["approve", "reject"],
+        "description": (
+            "Эмуляция открытия кредитной карты (MCP open_credit_card). "
+            "Подтверждайте только если пользователь явно согласен на демо-операцию."
+        ),
+    },
+    "open_deposit": {
+        "allowed_decisions": ["approve", "reject"],
+        "description": (
+            "Эмуляция открытия вклада (MCP open_deposit). "
+            "Подтверждайте только если пользователь явно согласен на демо-операцию."
+        ),
+    },
+}
 
 # Короткий нейтральный текст при пустом финальном ответе модели (vision §8).
 FALLBACK_ASSISTANT_REPLY = (
@@ -108,22 +123,20 @@ async def create_bank_agent(
         logger.info("MCP bank отключён (MCP_BANK_ENABLED=false)")
 
     middleware: list[Any] = []
-    if _OPEN_CREDIT_CARD_TOOL_NAME in mcp_tool_names:
+    interrupt_on: dict[str, Any] = {
+        name: spec for name, spec in _HITL_INTERRUPT_TOOL_SPECS.items() if name in mcp_tool_names
+    }
+    if interrupt_on:
         middleware.append(
             HumanInTheLoopMiddleware(
-                interrupt_on={
-                    _OPEN_CREDIT_CARD_TOOL_NAME: {
-                        "allowed_decisions": ["approve", "reject"],
-                        "description": (
-                            "Эмуляция открытия кредитной карты (MCP open_credit_card). "
-                            "Подтверждайте только если пользователь явно согласен на демо-операцию."
-                        ),
-                    }
-                },
+                interrupt_on=interrupt_on,
                 description_prefix="Требуется подтверждение операции",
             )
         )
-        logger.info("HITL: HumanInTheLoopMiddleware для инструмента %s", _OPEN_CREDIT_CARD_TOOL_NAME)
+        logger.info(
+            "HITL: HumanInTheLoopMiddleware для инструментов: %s",
+            ", ".join(sorted(interrupt_on)),
+        )
 
     saver = checkpointer or InMemorySaver()
     agent_graph = create_agent(

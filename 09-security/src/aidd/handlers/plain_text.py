@@ -13,7 +13,7 @@ from aidd.config import AppConfig
 from aidd.conversation_store import ConversationStore
 from aidd.handlers.hitl_callback import (
     build_hitl_resume_command,
-    hitl_open_credit_card_keyboard,
+    hitl_bank_operation_keyboard,
 )
 from aidd.handlers.telegram_bank_response import (
     send_bank_turn_result_followup,
@@ -107,7 +107,7 @@ async def plain_text(
                     )
                     await message.answer(
                         prompt,
-                        reply_markup=hitl_open_credit_card_keyboard(),
+                        reply_markup=hitl_bank_operation_keyboard(),
                     )
                     return
         except LlmInsufficientCreditsError:
