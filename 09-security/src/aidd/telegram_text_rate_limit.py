@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
-import time
-from collections import defaultdict, deque
-
 from aidd.config import AppConfig
+from aidd.sliding_window_chat_limiter import SlidingWindowChatLimiter
 
 
 class TelegramTextRateLimiter:
     """In-memory счётчик: не более ``max_messages`` событий за ``window_seconds`` на один ``chat_id``."""
 
-    __slots__ = ("enabled", "max_messages", "window_seconds", "_hits", "_lock")
+    __slots__ = ("enabled", "max_messages", "window_seconds", "_limiter")
 
     def __init__(
         self,
@@ -28,8 +25,12 @@ class TelegramTextRateLimiter:
             and self.window_seconds > 0.0
             and self.max_messages >= 1
         )
-        self._lock = asyncio.Lock()
-        self._hits: dict[int, deque[float]] = defaultdict(deque)
+        self._limiter: SlidingWindowChatLimiter | None = None
+        if self.enabled:
+            self._limiter = SlidingWindowChatLimiter(
+                window_seconds=self.window_seconds,
+                max_events=self.max_messages,
+            )
 
     @classmethod
     def from_app_config(cls, cfg: AppConfig) -> TelegramTextRateLimiter:
@@ -41,19 +42,9 @@ class TelegramTextRateLimiter:
 
     async def allow_text_message(self, chat_id: int) -> bool:
         """``True`` — сообщение можно обрабатывать (слот записан); ``False`` — превышен лимит."""
-        if not self.enabled:
+        if not self.enabled or self._limiter is None:
             return True
-        now = time.monotonic()
-        cid = int(chat_id)
-        async with self._lock:
-            dq = self._hits[cid]
-            cutoff = now - self.window_seconds
-            while dq and dq[0] < cutoff:
-                dq.popleft()
-            if len(dq) >= self.max_messages:
-                return False
-            dq.append(now)
-            return True
+        return await self._limiter.try_acquire(chat_id)
 
     def explain_for_logs(self) -> str:
         if not self.enabled:

@@ -138,6 +138,46 @@ def _parse_rate_limit_max_messages(raw: str | None, *, default: int = 24) -> int
     return v
 
 
+def _parse_window_agent_seconds(raw: str | None, *, default: float = 60.0) -> float:
+    """Скользящее окно (сек.) для лимита обращений к агенту; env ``WINDOW_AGENT_SECONDS``."""
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        v = float(str(raw).strip())
+    except ValueError as e:
+        raise ValueError(
+            "WINDOW_AGENT_SECONDS must be a positive number "
+            f"(typically 5–3600), got: {raw!r}"
+        ) from e
+    if v < 5.0 or v > 3600.0:
+        raise ValueError(
+            "WINDOW_AGENT_SECONDS must be between 5 and 3600 "
+            f"(got {v})"
+        )
+    return v
+
+
+def _parse_max_agent_invocations_per_window(
+    raw: str | None, *, default: int = 32
+) -> int:
+    """Максимум вызовов ``ainvoke_turn`` за окно на один chat_id; не меньше 2 для сценария HITL."""
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        v = int(str(raw).strip(), 10)
+    except ValueError as e:
+        raise ValueError(
+            "MAX_AGENT_INVOCATIONS_PER_WINDOW must be an integer "
+            f"between 2 and 500, got: {raw!r}"
+        ) from e
+    if v < 2 or v > 500:
+        raise ValueError(
+            "MAX_AGENT_INVOCATIONS_PER_WINDOW must be between 2 and 500 "
+            f"(got {v}); minimum 2 allows one user message plus one HITL resume"
+        )
+    return v
+
+
 def _parse_rag_retrieval_mode(raw: str | None) -> RagRetrievalMode:
     s = (raw or "").strip().lower()
     if not s:
@@ -253,6 +293,9 @@ class AppConfig:
     telegram_text_rate_limit_enabled: bool
     telegram_text_rate_limit_window_seconds: float
     telegram_text_rate_limit_max_messages: int
+    agent_invocations_rate_limit_enabled: bool
+    window_agent_seconds: float
+    max_agent_invocations_per_window: int
     mcp_bank_enabled: bool
     mcp_bank_streamable_http_url: str
 
@@ -367,6 +410,16 @@ class AppConfig:
             os.environ.get("TELEGRAM_TEXT_RATE_LIMIT_MAX_MESSAGES"), default=24
         )
 
+        agent_invocations_rate_limit_enabled = _parse_bool_env(
+            os.environ.get("AGENT_INVOCATIONS_RATE_LIMIT_ENABLED"), default=True
+        )
+        window_agent_seconds = _parse_window_agent_seconds(
+            os.environ.get("WINDOW_AGENT_SECONDS"), default=60.0
+        )
+        max_agent_invocations_per_window = _parse_max_agent_invocations_per_window(
+            os.environ.get("MAX_AGENT_INVOCATIONS_PER_WINDOW"), default=32
+        )
+
         ragas_llm = (os.environ.get("RAGAS_LLM_MODEL") or "").strip() or llm_model
         ragas_max_raw = (os.environ.get("RAGAS_LLM_MAX_COMPLETION_TOKENS") or "").strip()
         ragas_llm_max_completion_tokens = (
@@ -430,6 +483,9 @@ class AppConfig:
             telegram_text_rate_limit_max_messages=(
                 telegram_text_rate_limit_max_messages
             ),
+            agent_invocations_rate_limit_enabled=agent_invocations_rate_limit_enabled,
+            window_agent_seconds=window_agent_seconds,
+            max_agent_invocations_per_window=max_agent_invocations_per_window,
             mcp_bank_enabled=mcp_bank_enabled,
             mcp_bank_streamable_http_url=mcp_bank_streamable_http_url,
         )

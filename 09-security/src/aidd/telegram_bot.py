@@ -6,6 +6,7 @@ from typing import Self
 from aiogram import Bot, Dispatcher
 from aiogram.types.error_event import ErrorEvent
 
+from aidd.agent_invocation_rate_limit import AgentInvocationRateLimiter
 from aidd.bank_agent import BankAgentRunner, initialize_agent
 from aidd.config import AppConfig
 from aidd.conversation_store import ConversationStore
@@ -101,6 +102,8 @@ class TelegramBot:
         )
         text_limiter = TelegramTextRateLimiter.from_app_config(config)
         logger.info("Telegram text rate limit: %s", text_limiter.explain_for_logs())
+        agent_limiter = AgentInvocationRateLimiter.from_app_config(config)
+        logger.info("Agent invocation rate limit: %s", agent_limiter.explain_for_logs())
         dp = Dispatcher()
         dp.update.middleware(
             DependenciesMiddleware(
@@ -110,6 +113,7 @@ class TelegramBot:
                 config,
                 vector_index,
                 text_limiter,
+                agent_limiter,
             )
         )
         dp.include_router(get_main_router())

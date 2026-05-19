@@ -10,6 +10,10 @@ from aiogram.enums import ChatType
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from langgraph.types import Command
 
+from aidd.agent_invocation_rate_limit import (
+    AGENT_INVOCATION_LIMIT_USER_REPLY,
+    AgentInvocationRateLimiter,
+)
 from aidd.bank_agent import BankAgentRunner
 from aidd.config import AppConfig
 from aidd.conversation_store import ConversationStore
@@ -68,6 +72,7 @@ async def hitl_open_credit_card_callback(
     conversation_store: ConversationStore,
     bank_runner: BankAgentRunner,
     app_config: AppConfig,
+    agent_invocation_rate_limiter: AgentInvocationRateLimiter,
 ) -> None:
     if query.message is None:
         await query.answer()
@@ -88,6 +93,15 @@ async def hitl_open_credit_card_callback(
             await query.message.edit_reply_markup(reply_markup=None)
         except Exception:
             logger.debug("edit_reply_markup (idempotent) failed", exc_info=True)
+        return
+
+    if not await agent_invocation_rate_limiter.allow_agent_turn(chat_id):
+        logger.warning(
+            "hitl_open_credit_card_callback: agent invocation rate limit exceeded chat_id=%s",
+            chat_id,
+        )
+        await query.answer()
+        await query.message.answer(AGENT_INVOCATION_LIMIT_USER_REPLY)
         return
 
     await query.answer()

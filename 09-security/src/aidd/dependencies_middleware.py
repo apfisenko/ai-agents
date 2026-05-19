@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 
+from aidd.agent_invocation_rate_limit import AgentInvocationRateLimiter
 from aidd.bank_agent import BankAgentRunner
 from aidd.config import AppConfig
 from aidd.conversation_store import ConversationStore
@@ -22,6 +23,7 @@ class DependenciesMiddleware(BaseMiddleware):
         app_config: AppConfig,
         vector_index: VectorIndexState,
         telegram_text_rate_limiter: TelegramTextRateLimiter,
+        agent_invocation_rate_limiter: AgentInvocationRateLimiter,
     ) -> None:
         super().__init__()
         self._conversation_store = conversation_store
@@ -30,6 +32,7 @@ class DependenciesMiddleware(BaseMiddleware):
         self._app_config = app_config
         self._vector_index = vector_index
         self._telegram_text_rate_limiter = telegram_text_rate_limiter
+        self._agent_invocation_rate_limiter = agent_invocation_rate_limiter
 
     async def __call__(
         self,
@@ -43,4 +46,5 @@ class DependenciesMiddleware(BaseMiddleware):
         data["app_config"] = self._app_config
         data["vector_index"] = self._vector_index
         data["telegram_text_rate_limiter"] = self._telegram_text_rate_limiter
+        data["agent_invocation_rate_limiter"] = self._agent_invocation_rate_limiter
         return await handler(event, data)
