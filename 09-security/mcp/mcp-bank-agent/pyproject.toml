@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-bank-agent"
+version = "0.1.0"
+description = "MCP-сервер: справочник банковских продуктов (search_products)"
+readme = "ReadMe.md"
+requires-python = "==3.11.*"
+dependencies = [
+  "fastmcp>=2.3,<3",
+]
+
+[project.scripts]
+mcp-bank-agent = "mcp_bank_agent.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_bank_agent"]
