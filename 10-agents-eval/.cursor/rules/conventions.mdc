@@ -1,0 +1,38 @@
+---
+description:
+alwaysApply: true
+---
+
+# Conventions
+
+**Продуктовый замысел** — [docs/idea.md](docs/idea.md). **Нормативная спецификация** — [docs/vision.md](docs/vision.md): агент, **`rag_search`**, локальный **`convert_currency`**, опциональные MCP-инструменты (в т.ч. **`open_credit_card`**, **`open_deposit`**), **HITL** / **PII** / **rate limiting** (§12 vision), retrieval, конфигурация, оценка, e2e **agentevals**, команды бота.
+
+## Дисциплина агента
+
+- Не дублировать в этом файле перечни переменных окружения, таблицы режимов retrieval, состав метрик RAGAS и контракт JSON инструмента — всё в vision и `.env.example`.
+- Не расширять scope и не менять архитектуру вразрез с vision; новая возможность — сначала правка vision, затем код.
+- Соблюдать в vision разделы про цель и границы, референсы (в т.ч. **`data/agent-mcp.ipynb`**, **`data/agent-guards-demo.ipynb`**, **`data/agent-evaluation.ipynb`**), поток диалога, **MCP**, **`rag_search`**, безопасность (**§12**), конфигурацию, мониторинг, RAGAS и **e2e agentevals** (**vision** §10 п. 5).
+
+## Якоря (кратко)
+
+- Python **3.11**, **uv**; Telegram: **aiogram 3.x**, async, **polling**; callback-кнопки HITL (**Accept** / **Reject**) и снятие клавиатуры после нажатия — vision §8.
+- Оркестрация ответа: **LangChain 1.x**, **`create_agent`**, **`MemorySaver`**, **ReAct**, middleware (**`HumanInTheLoopMiddleware`** для **`open_credit_card`** и **`open_deposit`** — только approve/reject); ход агента по паттерну **`run_turn_agent`** из **`data/agent-guards-demo.ipynb`** — vision §8. RAG по проиндексированным файлам — только через **`rag_search`**. Динамика продуктов и прочие MCP-инструменты при доступном сервере — vision. **E2E траектории** — **`tests/e2e/`**, agentevals, команды **vision** §10 п. 5 и §13.
+- Инициализация агента с MCP: **`async`** **`create_bank_agent`** / **`initialize_agent`**, **`await mcp_client.get_tools()`**; при ошибке подключения — **warning** и работа без MCP-инструментов (vision).
+- Retrieval: режим **`RAG_RETRIEVAL_MODE`** (**semantic**, **hybrid**, **hybrid_rerank**), **`InMemoryVectorStore`**, индексация при старте и **`/index`**, **`/index_status`** — vision.
+- LLM-провайдер — **OpenRouter**: переменные и имена моделей — раздел конфигурации в vision.
+- MCP-сервер **`mcp-bank-agent`**: подпроект **`mcp/mcp-bank-agent`**, **streamable HTTP** (порт **8000** по умолчанию); локальный запуск **`make run-mcp-bank`** (**`bash make.sh run-mcp-bank`** или **`make.ps1 run-mcp-bank`** — то же назначение) до **`make run`** для полного набора инструментов — vision §13.
+
+## Принципы кода
+
+- **KISS**, **YAGNI**; **ООП** по делу; **один класс — один файл**, где это уже принято в проекте.
+- Модули-ориентиры: **`indexing.py`**, сборка retrieval, **`evaluation.py`**, **`dataset_synthesizer.py`**, модуль агента (**async**, MCP-клиент, middleware безопасности) и модуль **`rag_search`** — по структуре в vision (имена могут быть уточнены в коде). E2E на траекториях агента — **`tests/e2e/`** (vision §10 п. 5).
+
+## Конфигурация и безопасность
+
+- Секреты только в env; в git — **`.env.example`**. Обязательные переменные — явная ошибка при старте (перечень в vision и `.env.example`).
+- Логи: **`logging`**, без токенов, ключей, PAN и лишних дампов (политика — vision §11–12).
+- **PII** и **rate limiting** не изобретать в обход vision: пороги и флаги из конфигурации (§9 vision), в т.ч. **`TELEGRAM_TEXT_RATE_LIMIT_ENABLED`** как глобальное вкл./выкл.
+
+## Прочее
+
+- Docker / Make / PowerShell / **`make.sh`** (если добавлен) не расширять сверх целей vision (включая цели **`run-mcp-bank`** и дубли в **`make.ps1`** / **`make.sh`**, если они в vision §13).

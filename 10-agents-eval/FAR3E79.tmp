@@ -1,0 +1,5 @@
+# ADMIN
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=11301 connectaddress=127.0.0.1 connectport=1301
+netsh advfirewall firewall add rule name="AIDD proxy 11301" dir=in action=allow protocol=TCP localport=11301
+
+
