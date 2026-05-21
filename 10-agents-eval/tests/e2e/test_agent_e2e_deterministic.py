@@ -53,3 +53,23 @@ async def test_trajectory_includes_convert_currency_for_amount(e2e_bank_runner):
     ref = reference_must_call_tool("convert_currency")
     result = await eval_fn(outputs=messages, reference_outputs=ref)
     assert result.get("score") is True, result
+
+@pytest.mark.asyncio
+async def test_trajectory_includes_convert_currency_mcp(e2e_bank_runner):
+    eval_fn = create_async_trajectory_match_evaluator(
+        trajectory_match_mode="superset",
+        tool_args_match_mode="ignore",
+    )
+    tid = unique_thread_id("fx2")
+    await e2e_bank_runner.ainvoke_turn(
+        chat_id=0,
+        thread_id=tid,
+        user_text=(
+            "Обязательно вызови инструмент currency_converter_mcp: переведи 100 USD в RUB, "
+            "в ответе укажи число в рублях одной строкой."
+        ),
+    )
+    messages = await e2e_bank_runner.aget_thread_messages(tid)
+    ref = reference_must_call_tool("currency_converter_mcp")
+    result = await eval_fn(outputs=messages, reference_outputs=ref)
+    assert result.get("score") is True, result

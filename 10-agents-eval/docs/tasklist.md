@@ -401,7 +401,7 @@
 
 ---
 
-## Спринт 7 — Безопасность: чувствительные MCP-операции (`open_credit_card`, `open_deposit`), HITL, PII, rate limiting
+## Спринт 7 — Безопасность: чувствительные MCP-операции (`open_credit_card`, `open_deposit`), HITL, PII, rate limiting (завершён)
 
 Цели и ограничения — [vision.md](vision.md) (§8, §12, сводка). Референс потока с interrupt: **`data/agent-guards-demo.ipynb`** (паттерн **`run_turn_agent`**, **`HumanInTheLoopMiddleware`**). Принципы: **KISS**, **YAGNI** — только **Accept** / **Reject** для HITL, без **edit**.
 
@@ -415,7 +415,7 @@
 | 29 | PII-маскирование исходящих сообщений и политика логов | ✅ Done |
 | 30 | Rate limiting по **`chat_id`**, **`.env.example`**, **`make.sh`** | ✅ Done |
 | 31 | Лимит **обращений к агенту** (`ainvoke_turn`) на **`chat_id`** за окно времени | ✅ Done |
-| 32 | MCP **`open_deposit`**, HITL и Telegram (общие Accept/Reject), промпт, vision/idea | 🚧 In Progress |
+| 32 | MCP **`open_deposit`**, HITL и Telegram (общие Accept/Reject), промпт, vision/idea | ✅ Done |
 
 ---
 
@@ -499,11 +499,11 @@
 - [x] **`hitl_callback`**, **`plain_text`**: общая клавиатура **`hitl_bank_operation_keyboard`**, callback **`hitl_bank_operation_callback`**
 - [x] **`prompts/system.txt`**, **vision.md**, **idea.md**, **mcp-bank-agent/ReadMe.md**
 
-**Статус закрытия итерации:** после вашей проверки в Telegram/MCP — подтвердите; затем в таблице прогресса можно выставить **Done**.
+**Статус:** выполнено.
 
 ---
 
-## Спринт 8 — E2E агента, agentevals (ДЗ10)
+## Спринт 8 — E2E агента, agentevals (ДЗ10) (завершён)
 
 Цели — [vision.md](vision.md) §10 п. 5, §9, §13. Референс: **`data/agent-evaluation.ipynb`**. Принципы: **KISS**, без дублирования продукта в тестах — один **индекс**, **`BankAgentRunner`**, **`MCP_BANK_ENABLED=false`** в фикстуре.
 
@@ -511,8 +511,8 @@
 
 | № | Итерация | Статус |
 |---|----------|--------|
-| 33 | ДЗ10-1: документация (idea, vision, conventions, tasklist, .env.example) и сценарии e2e | 🚧 In Progress |
-| 34 | ДЗ10-2: `tests/e2e`, dev-зависимости, Make / `make.ps1` / `make.sh`, `BankAgentRunner.aget_thread_messages` | 🚧 In Progress |
+| 33 | ДЗ10-1: документация (idea, vision, conventions, tasklist, .env.example) и сценарии e2e | ✅ Done |
+| 34 | ДЗ10-2: `tests/e2e`, dev-зависимости, Make / `make.ps1` / `make.sh`, `BankAgentRunner.aget_thread_messages` | ✅ Done |
 
 ---
 
@@ -522,12 +522,12 @@
 
 **Проверка:** в документах согласованы команды запуска и переменная судьи; референсная тетрадка указана.
 
-- [ ] **idea.md**, **vision.md** (§2, §5, §9, §10 п. 5, §13, сводка)
-- [ ] **conventions.mdc**
-- [ ] **tasklist** (спринт ДЗ10)
-- [ ] **`.env.example`**: **`AGENTEVALS_LLM_MODEL`**
+- [x] **idea.md**, **vision.md** (§2, §5, §9, §10 п. 5, §13, сводка)
+- [x] **conventions.mdc**
+- [x] **tasklist** (спринт ДЗ10)
+- [x] **`.env.example`**: **`AGENTEVALS_LLM_MODEL`**
 
-**Статус:** черновик документации внесён в репозиторий; после вашей проверки — отметить чекбоксы и **Done** для ДЗ10-1.
+**Статус:** выполнено.
 
 ---
 
@@ -537,10 +537,10 @@
 
 **Проверка:** при заполненном **`.env`** (`make test-e2e-agent-deterministic`) проходят сопоставления; при **`AGENTEVALS_LLM_MODEL`** — прогон судьи; без ключа API — осмысленный **skip** / ошибка конфига, как у прочих smoke-команд.
 
-- [ ] **`tests/__init__.py`**, **`tests/e2e/__init__.py`** (импорт **`tests.e2e.*`**)
-- [ ] **`tests/e2e/conftest.py`**, детерминированные и judge-файлы
-- [ ] **`pyproject.toml`**: группа **dev**, **`[tool.pytest.ini_options]`**
-- [ ] **Makefile**, **`make.ps1`**, **`make.sh`**
-- [ ] **`bank_agent.py`**: **`aget_thread_messages`**
+- [x] **`tests/__init__.py`**, **`tests/e2e/__init__.py`** (импорт **`tests.e2e.*`**)
+- [x] **`tests/e2e/conftest.py`**, детерминированные и judge-файлы
+- [x] **`pyproject.toml`**: группа **dev**, **`[tool.pytest.ini_options]`**
+- [x] **Makefile**, **`make.ps1`**, **`make.sh`**
+- [x] **`bank_agent.py`**: **`aget_thread_messages`**
 
-**Статус:** реализация в репозитории согласована с текстом итераций; после вашей проверки прогонов **`make test-e2e-agent`** / чекбоксы — отметить выполненным и **Done** в таблице прогресса.
+**Статус:** выполнено.

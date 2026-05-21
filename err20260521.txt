@@ -1,0 +1,4 @@
+2026-05-21 21:03:34 | INFO | aidd.indexed_retrieval | CrossEncoder (rerank): cross-encoder/ms-marco-MiniLM-L-6-v2
+'(ProtocolError('Connection aborted.', ConnectionResetError(10054, 'Удаленный хост принудительно разорвал существующее подключение', None, 10054, None)), '(Request ID: c6c491cf-52ae-469d-9b88-dda03cc2df7f)')' thrown while requesting HEAD https://huggingface.co/cross-encoder/ms-marco-MiniLM-L-6-v2/resolve/main/config.json
+2026-05-21 21:03:36 | WARNING | huggingface_hub.utils._http | '(ProtocolError('Connection aborted.', ConnectionResetError(10054, 'Удаленный хост принудительно разорвал существующее подключение', None, 10054, None)), '(Request ID: c6c491cf-52ae-469d-9b88-dda03cc2df7f)')' thrown while requesting HEAD https://huggingface.co/cross-encoder/ms-marco-MiniLM-L-6-v2/resolve/main/config.json
+Retrying in 1s [Retry 1/5].

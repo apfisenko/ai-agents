@@ -171,6 +171,9 @@ def make_embeddings(
     batch = _env_int("EMBEDDING_BATCH_SIZE", 64, min_v=1, max_v=512)
     retries = _env_int("EMBEDDING_MAX_RETRIES", 5, min_v=0, max_v=12)
     proxy = _embedding_http_proxy()
+    # OpenAI Python SDK подставляет encoding_format=base64 по умолчанию; OpenRouter/Google
+    # embedding отвечает 400 «use float», в теле может прийти error без data — тогда парсер падает
+    # как ValueError(\"No embedding data received\") при индексации.
     kwargs: dict = {
         "model": embedding_model,
         "api_key": open_api_key,
@@ -180,6 +183,7 @@ def make_embeddings(
         "request_timeout": timeout,
         "chunk_size": batch,
         "max_retries": retries,
+        "model_kwargs": {"encoding_format": "float"},
     }
     if proxy:
         kwargs["openai_proxy"] = proxy
